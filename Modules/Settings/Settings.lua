@@ -1,11 +1,13 @@
 local addonName, addon = ...
 
 addon:RegisterInit(function()
-    local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.Settings = ms.Settings or { debug = false }
+    if addon.GetModuleSettings then addon:GetModuleSettings('Settings', { debug = false }) end
 end)
 
-local function GetSettings() return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Settings or { debug = false } end
+local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('Settings', { debug = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Settings or { debug = false }
+end
 
 local function OnClick(btn)
     if InterfaceOptionsFrame then

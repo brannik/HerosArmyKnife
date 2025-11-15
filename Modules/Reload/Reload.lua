@@ -6,7 +6,10 @@ local function OnClick(btn)
     ReloadUI()
 end
 
-local function GetSettings() return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Reload or { debug = false } end
+local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('Reload', { debug = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Reload or { debug = false }
+end
 
 local function OnTooltip(btn)
     local lines = {
@@ -22,8 +25,7 @@ addon:RegisterToolbarIcon("Reload", "Interface\\Buttons\\UI-RefreshButton", OnCl
 
 -- Module-specific options panel (simple description)
 addon:RegisterInit(function()
-    local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.Reload = ms.Reload or { debug = false }
+    if addon.GetModuleSettings then addon:GetModuleSettings('Reload', { debug = false }) end
 end)
 
 if addon.RegisterModuleOptions then

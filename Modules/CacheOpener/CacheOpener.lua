@@ -1,16 +1,13 @@
 local addonName, addon = ...
 
 addon:RegisterInit(function()
-    local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.CacheOpener = ms.CacheOpener or { cacheItems = {}, reservedSlots = 2, openDelay = 0.3, debug = false }
-    local s = ms.CacheOpener
-    if not s.cacheItems then s.cacheItems = {} end
-    if s.reservedSlots == nil then s.reservedSlots = 2 end
-    if s.openDelay == nil then s.openDelay = 0.3 end
-    if s.debug == nil then s.debug = false end
+    if addon.GetModuleSettings then addon:GetModuleSettings('CacheOpener', { cacheItems = {}, reservedSlots = 2, openDelay = 0.3, debug = false }) end
 end)
 
-local function GetSettings() return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.CacheOpener or { cacheItems = {}, reservedSlots = 2, openDelay = 0.3, debug = false } end
+local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('CacheOpener', { cacheItems = {}, reservedSlots = 2, openDelay = 0.3, debug = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.CacheOpener or { cacheItems = {}, reservedSlots = 2, openDelay = 0.3, debug = false }
+end
 
 -- Scan bags and count occurrences of watched cache items
 local function ScanBagCounts(watched)

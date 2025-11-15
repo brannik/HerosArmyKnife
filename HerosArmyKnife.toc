@@ -20,3 +20,4 @@ Modules\MythicPlusHelper\LFMQueue.lua
 Modules\MythicPlusHelper\Recruitment.lua
 Modules\MythicPlusHelper\MessageChannel.lua
 Modules\MythicPlusHelper\MythicPlusHelper.lua
+Modules\RareTracker\RareTracker.lua

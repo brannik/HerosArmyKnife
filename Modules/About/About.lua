@@ -61,6 +61,7 @@ local function EnsureAboutWindow()
             "|cffB5B5B5Reload|r: Provides fast UI reload convenience (if present).",
             "|cffC8C800Settings|r: Central configuration panel (orientation, spacing, theme, notifications).",
             "|cffAAAAFFAbout|r: This info window and basic addon usage guidance.",
+            "|cffFFAA00RareTracker|r: Toggleable monitoring for rare / rare-elite mobs (target, mouseover); popup window with Mark Skull button, optional auto marking, rested-zone suppression & repeat delay.",
             " ",
             "|cffFFD200Features|r",
             "Colored, animated monitoring aura & ring indicators, memory-conscious row pooling, throttled UI refresh, role-based party marking, hover highlight effects on toolbar icons, persistent settings.",
@@ -83,7 +84,12 @@ local function OnClick(btn)
     if w:IsShown() then w:Hide() else w:Show(); w:Refresh() end
 end
 
-local function GetSettings() return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.About or { debug = false } end
+local function GetSettings()
+    if addon.GetModuleSettings then
+        return addon:GetModuleSettings('About', { debug = false, author = 'HerosArmyKnife' })
+    end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.About or { debug = false }
+end
 
 local function OnTooltip(btn)
     local lines = {
@@ -102,8 +108,7 @@ end
 addon:RegisterToolbarIcon("About", "Interface\\Icons\\INV_Scroll_11", OnClick, OnTooltip)
 
 addon:RegisterInit(function()
-    local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.About = ms.About or { debug = false, author = ms.About and ms.About.author or "HerosArmyKnife" }
+    if addon.GetModuleSettings then addon:GetModuleSettings('About', { debug = false, author = 'HerosArmyKnife' }) end
 end)
 
 if addon.RegisterModuleOptions then

@@ -23,6 +23,39 @@ addon.Print = Print
 -- Ensure global DB table exists early so other files referencing it do not error
 HerosArmyKnifeDB = HerosArmyKnifeDB or {}
 
+-- Utility: shallow/deep defaults assignment and module settings accessor
+local function DeepCopy(src)
+    if type(src) ~= 'table' then return src end
+    local t = {}
+    for k,v in pairs(src) do t[k] = DeepCopy(v) end
+    return t
+end
+
+function addon:AssignDefaults(dst, defaults)
+    if type(dst) ~= 'table' then dst = {} end
+    if type(defaults) ~= 'table' then return dst end
+    for k, v in pairs(defaults) do
+        if dst[k] == nil then
+            dst[k] = DeepCopy(v)
+        elseif type(v) == 'table' and type(dst[k]) == 'table' then
+            addon:AssignDefaults(dst[k], v)
+        end
+    end
+    return dst
+end
+
+function addon:GetModuleSettings(key, defaults)
+    if not key then return {} end
+    HerosArmyKnifeDB = HerosArmyKnifeDB or {}
+    local db = HerosArmyKnifeDB
+    db.settings = db.settings or {}
+    local s = db.settings
+    s.moduleSettings = s.moduleSettings or {}
+    local ms = s.moduleSettings
+    ms[key] = addon:AssignDefaults(ms[key] or {}, defaults or {})
+    return ms[key]
+end
+
 addon.frame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local name = ...

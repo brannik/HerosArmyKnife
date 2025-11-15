@@ -4,13 +4,16 @@ local addonName, addon = ...
 local DEFAULT_TRANSMOG_MACRO = [[/run local c=C_AppearanceCollection for b=0,4 do for s=1,GetContainerNumSlots(b) do local i=GetContainerItemID(b,s) local a=i and C_Appearance.GetItemAppearanceID(i) if a and not c.IsAppearanceCollected(a) then c.CollectItemAppearance(i) end end end]]
 
 addon:RegisterInit(function()
-    local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.Transmog = ms.Transmog or { macro = DEFAULT_TRANSMOG_MACRO, debug = false }
-    if not ms.Transmog.macro or ms.Transmog.macro == '' then ms.Transmog.macro = DEFAULT_TRANSMOG_MACRO end
-    if ms.Transmog.debug == nil then ms.Transmog.debug = false end
+    if addon.GetModuleSettings then
+        local s = addon:GetModuleSettings('Transmog', { macro = DEFAULT_TRANSMOG_MACRO, debug = false })
+        if not s.macro or s.macro == '' then s.macro = DEFAULT_TRANSMOG_MACRO end
+    end
 end)
 
-local function GetSettings() return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Transmog or { macro = "" } end
+local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('Transmog', { macro = DEFAULT_TRANSMOG_MACRO, debug = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Transmog or { macro = "" }
+end
 
 local function ExecuteMacro()
     local s = GetSettings()

@@ -10,6 +10,7 @@ R._pendingRefresh = false
 R._refreshAccum = 0
 
 local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false }) end
     return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings and HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or {}
 end
 

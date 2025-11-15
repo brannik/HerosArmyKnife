@@ -5,9 +5,7 @@ local keystoneInfo = { id = nil, name = nil, link = nil, texture = nil }
 local KEY_FALLBACK_ICON = "Interface\\Icons\\INV_Misc_Key_03"
 
 addon:RegisterInit(function()
-    local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.MythicPlusHelper = ms.MythicPlusHelper or { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS" }
-    local s = ms.MythicPlusHelper
+    local s = addon.GetModuleSettings and addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS", recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false }) or (HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or {})
     if s.monitoring == nil then s.monitoring = false end
     if s.debug == nil then s.debug = false end
     if not s.glow then s.glow = { r=1, g=0.85, b=0, a=0.9, pulse=false } end
@@ -16,6 +14,7 @@ addon:RegisterInit(function()
     if s.recruitChannel == nil then s.recruitChannel = 1 end
     if s.recruitNeedTank == nil then s.recruitNeedTank = false end
     if s.recruitNeedHealer == nil then s.recruitNeedHealer = false end
+    if s.recruitNeedDPS == nil then s.recruitNeedDPS = false end
     addon.MPlusSpec = s.spec
     -- Auto-apply saved monitoring state silently on init
     if s.monitoring then
@@ -24,6 +23,7 @@ addon:RegisterInit(function()
 end)
 
 local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS", recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false }) end
     return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or { monitoring = false }
 end
 

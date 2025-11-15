@@ -1,12 +1,16 @@
 local addonName, addon = ...
 
-addon:RegisterInit(function()
     local ms = HerosArmyKnifeDB.settings.moduleSettings
     ms.SellTrash = ms.SellTrash or { auto = true, debug = false }
     if ms.SellTrash.debug == nil then ms.SellTrash.debug = false end
+addon:RegisterInit(function()
+    if addon.GetModuleSettings then addon:GetModuleSettings('SellTrash', { auto = true, debug = false }) end
 end)
 
-local function GetSettings() return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.SellTrash or { auto = true } end
+local function GetSettings()
+    if addon.GetModuleSettings then return addon:GetModuleSettings('SellTrash', { auto = true, debug = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.SellTrash or { auto = true }
+end
 
 local modFrame = CreateFrame("Frame")
 modFrame:RegisterEvent("MERCHANT_SHOW")
