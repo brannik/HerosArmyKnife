@@ -80,6 +80,8 @@ function addon:RegisterThemedFrame(frame, variant)
     if not frame then return end
     table.insert(addon._themedFrames, { frame = frame, variant = variant })
     addon:ApplyBackdrop(frame, variant)
+    -- Newly registered themed frame: ensure addon font applied
+    if addon.ForceGlobalFont then addon:ForceGlobalFont() end
 end
 
 -- Helper to create a themed frame consistently. Usage:
@@ -109,6 +111,8 @@ function addon:ApplyTheme()
         end
     end
     if addon.ApplyTooltipTheme then addon:ApplyTooltipTheme() end
+    -- Force global font override (Morpheus) after theme elements
+    if addon.ForceGlobalFont then addon:ForceGlobalFont() end
 end
 
 function addon:SetTheme(name)
@@ -258,6 +262,97 @@ function addon:InitTheme()
         HerosArmyKnifeDB.settings.themeName = 'Default'
     end
     addon:ApplyTheme()
+end
+
+-- Global Morpheus font enforcement
+local MORPHEUS_FONT = "Fonts\\MORPHEUS.ttf"
+function addon:ForceGlobalFont()
+    -- Scoped Morpheus application: ONLY affect addon-created frames, not global UI fonts.
+    if not MORPHEUS_FONT then return end
+    local baseSize =  (HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.fontSize) or 14
+    local function deriveSize(orig)
+        if not orig then return baseSize end
+        -- Treat larger original fonts (titles) proportionally above base.
+        if orig >= 18 then return math.min(baseSize + 6, baseSize + (orig - 18)) end
+        if orig >= 16 then return math.min(baseSize + 4, baseSize + (orig - 16)) end
+        if orig >= 14 then return math.min(baseSize + 2, baseSize) end
+        return baseSize
+    end
+    local function applyFont(fs)
+        if not fs or not fs.SetFont then return end
+        local _, size, outline = fs:GetFont()
+        local finalSize = deriveSize(size)
+        if outline and outline ~= "" then
+            fs:SetFont(MORPHEUS_FONT, finalSize, outline)
+        else
+            fs:SetFont(MORPHEUS_FONT, finalSize, "OUTLINE")
+        end
+    end
+    -- Iterate themed frames and all their fontstring children
+    for _, info in ipairs(addon._themedFrames) do
+        local f = info.frame
+        if f then
+            -- Frame direct regions that are fontstrings
+            local regions = { f:GetRegions() }
+            for _, r in ipairs(regions) do
+                if r.GetObjectType and r:GetObjectType() == "FontString" then applyFont(r) end
+            end
+            -- Child fontstrings
+            if f.GetChildren then
+                local children = { f:GetChildren() }
+                for _, child in ipairs(children) do
+                    if child.GetObjectType and child:GetObjectType() == "FontString" then applyFont(child) end
+                    -- Deep scan a level for nested fontstrings (e.g. scroll child)
+                    if child.GetChildren then
+                        local grand = { child:GetChildren() }
+                        for _, g in ipairs(grand) do
+                            if g.GetObjectType and g:GetObjectType()=="FontString" then applyFont(g) end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Toolbar buttons may have fontstrings (value texts, etc.)
+    if addon.toolbarFrame then
+        local regions = { addon.toolbarFrame:GetRegions() }
+        for _, r in ipairs(regions) do
+            if r.GetObjectType and r:GetObjectType()=="FontString" then applyFont(r) end
+        end
+        if addon.toolbarFrame.GetChildren then
+            local children = { addon.toolbarFrame:GetChildren() }
+            for _, c in ipairs(children) do
+                if c.GetObjectType and c:GetObjectType()=="FontString" then applyFont(c) end
+            end
+        end
+    end
+    -- Do NOT touch GameTooltip or global GameFont* objects to keep rest of UI untouched.
+end
+
+-- Apply Morpheus to tooltip lines for addon-generated tooltips
+function addon:ApplyTooltipFont(tt)
+    if not tt or not tt.GetName or not MORPHEUS_FONT then return end
+    local name = tt:GetName() or ""
+    if not tt._hakAddonTooltip then return end
+    local baseSize =  (HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.fontSize) or 14
+    local num = tt:NumLines() or 0
+    for i=1,num do
+        local l = _G[name.."TextLeft"..i]
+        local r = _G[name.."TextRight"..i]
+        if l and l.SetFont then local _, sz, outline = l:GetFont(); l:SetFont(MORPHEUS_FONT, baseSize, outline ~= "" and outline or "OUTLINE") end
+        if r and r.SetFont then local _, sz, outline = r:GetFont(); r:SetFont(MORPHEUS_FONT, baseSize, outline ~= "" and outline or "OUTLINE") end
+    end
+    -- Dynamic tooltip scaling to avoid overflow when font size increases
+    local scaleFactor = 1
+    if baseSize > 14 then
+        -- Soften scaling curve: half proportional beyond base (clamped)
+        scaleFactor = 1 + math.min((baseSize - 14) / 28, 0.5) -- max 1.5 scale at size 28
+    end
+    tt:SetScale(scaleFactor)
+    -- Allow wider wrapping if scaled by nudging minimum width
+    if tt:GetWidth() < 260 and scaleFactor > 1 then
+        tt:SetMinimumWidth( math.min(320, 260 + (baseSize - 14) * 4) )
+    end
 end
 
 -- Tooltip theming: applies theme's tooltip background/border to common tooltips

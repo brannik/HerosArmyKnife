@@ -7,6 +7,86 @@ panel.name = "HerosArmyKnife"
 InterfaceOptions_AddCategory(panel)
 addon.optionsPanel = panel
 
+-- Generic helper: wrap an options panel in a scroll frame so large content is accessible.
+function addon:MakePanelScrollable(p)
+	if not p or p._hakScrollApplied then return end
+	local scroll = CreateFrame("ScrollFrame", nil, p, "UIPanelScrollFrameTemplate")
+	scroll:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -4)
+	scroll:SetPoint("BOTTOMRIGHT", p, "BOTTOMRIGHT", -28, 4)
+	local content = CreateFrame("Frame", nil, scroll)
+	content:SetPoint("TOPLEFT")
+	content:SetPoint("TOPRIGHT", scroll, "TOPRIGHT", -16, 0)
+	content:SetSize(scroll:GetWidth() - 16, 400) -- initial height; will be resized dynamically
+	scroll:SetScrollChild(content)
+	scroll:EnableMouseWheel(true)
+	scroll:SetScript("OnMouseWheel", function(self, delta)
+		local step = 30
+		local new = self:GetVerticalScroll() - (delta * step)
+		if new < 0 then new = 0 end
+		local max = self:GetVerticalScrollRange()
+		if new > max then new = max end
+		self:SetVerticalScroll(new)
+	end)
+	-- Reparent existing children except scroll itself
+	local kids = { p:GetChildren() }
+	for _, k in ipairs(kids) do
+		if k ~= scroll then k:SetParent(content) end
+	end
+	-- Adjust existing fontstrings (regions) to content if needed
+	local regions = { p:GetRegions() }
+	for _, r in ipairs(regions) do
+		if r and r.GetObjectType and r:GetObjectType()=="FontString" then r:SetParent(content) end
+	end
+	p._hakScrollApplied = true
+	p._hakScrollContent = content
+	p._hakScrollFrame = scroll
+	-- Dynamic height calculation function
+	p._hakRefreshScrollHeight = function()
+		if not content or not scroll then return end
+		local cTop = content:GetTop() or 0
+		local minBottom = cTop -- will search for lowest bottom
+		local widest = 0
+		local function consider(region)
+			if region and region:IsShown() then
+				local b = region:GetBottom()
+				local r = region:GetRight()
+				if b and b < minBottom then minBottom = b end
+				if r and r > widest then widest = r end
+			end
+		end
+		for _, child in ipairs({ content:GetChildren() }) do consider(child) end
+		for _, region in ipairs({ content:GetRegions() }) do consider(region) end
+		-- If no children adjusted minBottom (still == cTop), force a baseline height
+		local neededHeight
+		if minBottom == cTop then
+			neededHeight = 400
+		else
+			neededHeight = (cTop - minBottom) + 30
+		end
+		local viewportH = scroll:GetHeight() or 300
+		if neededHeight < viewportH then neededHeight = viewportH + 20 end
+		content:SetHeight(neededHeight)
+		-- Force scroll frame to update its child rect so vertical range reflects new height
+		if scroll.UpdateScrollChildRect then scroll:UpdateScrollChildRect() end
+		-- Optional: widen content if children extended beyond current width
+		local cLeft = content:GetLeft() or 0
+		if widest > 0 then
+			local childWidth = widest - cLeft + 16
+			if childWidth > content:GetWidth() then content:SetWidth(childWidth) end
+		end
+	end
+	-- Refresh after a short delay to allow late layout (dropdown init etc.)
+	local refresher = CreateFrame("Frame", nil, content)
+	refresher.t = 0
+	refresher:SetScript("OnUpdate", function(self, e)
+		self.t = self.t + e
+		if self.t > 0.25 then
+			if p._hakRefreshScrollHeight then p._hakRefreshScrollHeight() end
+			self:SetScript("OnUpdate", nil)
+		end
+	end)
+end
+
 local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 16, -15)
 title:SetText("HerosArmyKnife")
@@ -35,6 +115,8 @@ local function safeSettings()
 	if t.padRight == nil then t.padRight = 4 end
 	if t.locked == nil then t.locked = false end
 	s.themeName = s.themeName or "Default"
+	-- Global addon font size (Morpheus) default
+	s.fontSize = s.fontSize or 14
 	s.modulesEnabled = s.modulesEnabled or {}
 	s.moduleSettings = s.moduleSettings or {}
 	-- Notifications basic defaults (full color table populated in Core.lua)
@@ -162,6 +244,29 @@ do
 end
 spacingSlider.valueText:SetText(string.format("%d", HerosArmyKnifeDB.settings.toolbar.iconSpacing))
 
+-- Font size slider (global Morpheus size)
+local fontSizeSlider = CreateFrame("Slider", "HAK_FontSizeSlider", panel, "OptionsSliderTemplate")
+fontSizeSlider:SetPoint("TOPLEFT", spacingSlider, "BOTTOMLEFT", 0, -40)
+fontSizeSlider:SetMinMaxValues(10, 24)
+fontSizeSlider:SetValueStep(1)
+if fontSizeSlider.SetObeyStepOnDrag then fontSizeSlider:SetObeyStepOnDrag(true) end
+_G[fontSizeSlider:GetName() .. 'Low']:SetText('10')
+_G[fontSizeSlider:GetName() .. 'High']:SetText('24')
+_G[fontSizeSlider:GetName() .. 'Text']:SetText('Font Size')
+fontSizeSlider:SetScript("OnValueChanged", function(self, value)
+	HerosArmyKnifeDB.settings.fontSize = value
+	if fontSizeSlider.valueText then fontSizeSlider.valueText:SetText(string.format("%d", value)) end
+	if addon.ForceGlobalFont then addon:ForceGlobalFont() end
+end)
+fontSizeSlider.valueText = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+fontSizeSlider.valueText:SetPoint("LEFT", fontSizeSlider, "RIGHT", 18, 0)
+do
+	local f, size, flags = GameFontNormal:GetFont()
+	fontSizeSlider.valueText:SetFont(f, (size or 13)+1, flags)
+	fontSizeSlider.valueText:SetTextColor(1, 0.95, 0.2)
+end
+fontSizeSlider.valueText:SetText(string.format("%d", HerosArmyKnifeDB.settings.fontSize))
+
 -- Padding sliders
 local function CreatePadSlider(name, label, anchor, x, y)
 	local s = CreateFrame("Slider", name, panel, "OptionsSliderTemplate")
@@ -191,19 +296,19 @@ local function CreatePadSlider(name, label, anchor, x, y)
 end
 
 -- Reflow padding sliders into 2 columns to reduce vertical space
-local padTop = CreatePadSlider("HAK_PadTop", "Pad Top", spacingSlider, 0, -24); padTop.padKey = 'padTop'
+local padTop = CreatePadSlider("HAK_PadTop", "Pad Top", fontSizeSlider, 0, -28); padTop.padKey = 'padTop'
 -- Vertical stack: Left, Bottom, Right beneath Top
 local padLeft = CreatePadSlider("HAK_PadLeft", "Pad Left", padTop, 0, -24); padLeft.padKey = 'padLeft'
 local padBottom = CreatePadSlider("HAK_PadBottom", "Pad Bottom", padLeft, 0, -24); padBottom.padKey = 'padBottom'
 local padRight = CreatePadSlider("HAK_PadRight", "Pad Right", padBottom, 0, -24); padRight.padKey = 'padRight'
 
 -- Lock checkbox
-local RIGHT_COL_X = 340
+local RIGHT_COL_X = 300 -- shift right column a bit left to reclaim space
 
 -- Notifications section
 local notifyHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
--- Place notifications at top of right column
-notifyHeader:SetPoint("TOPLEFT", padTop, "TOPLEFT", RIGHT_COL_X, -2)
+-- Place notifications nearer the top (aligned with theme dropdown) to remove empty upper-right gap
+notifyHeader:SetPoint("TOPLEFT", themeDrop, "TOPLEFT", RIGHT_COL_X, -2)
 notifyHeader:SetText("Notifications")
 
 local notifyModeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -330,11 +435,30 @@ panel.refresh = function()
 	if padBottom.valueText then padBottom.valueText:SetText(string.format("%d", t.padBottom)) end
 	if padLeft.valueText then padLeft.valueText:SetText(string.format("%d", t.padLeft)) end
 	if padRight.valueText then padRight.valueText:SetText(string.format("%d", t.padRight)) end
+	if fontSizeSlider then fontSizeSlider:SetValue(HerosArmyKnifeDB.settings.fontSize or 14) end
+	if fontSizeSlider.valueText then fontSizeSlider.valueText:SetText(string.format("%d", HerosArmyKnifeDB.settings.fontSize or 14)) end
+	-- Explicit bottom anchor based height recalculation to ensure all elements fit & scrolling range updates
+	if panel._hakScrollContent and panel._hakScrollFrame and lockCB and lockCB:IsShown() then
+		local top = panel._hakScrollContent:GetTop() or 0
+		local bottom = lockCB:GetBottom() or 0
+		if bottom and top then
+			local needed = (top - bottom) + 60 -- padding below last element
+			local viewportH = panel._hakScrollFrame:GetHeight() or 300
+			if needed < viewportH then needed = viewportH + 20 end
+			panel._hakScrollContent:SetHeight(needed)
+			if panel._hakScrollFrame.UpdateScrollChildRect then panel._hakScrollFrame:UpdateScrollChildRect() end
+		end
+	end
+	-- Fallback to generic refresh if still present
+	if panel._hakRefreshScrollHeight then panel._hakRefreshScrollHeight() end
 end
 
 panel:SetScript("OnShow", panel.refresh)
 panel.okay = function() end
 panel.cancel = function() end
+
+-- Apply scrolling to main options panel after initial widgets created
+addon:MakePanelScrollable(panel)
 
 -- Module-specific options panels API
 addon.moduleOptionBuilders = addon.moduleOptionBuilders or {}
@@ -358,16 +482,19 @@ function addon:BuildModuleOptionsPanels()
 			child.parent = panel.name
 			InterfaceOptions_AddCategory(child)
 			addon.moduleOptionPanels[key] = child
-			local title = child:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+			-- Wrap child in scroll frame before building contents
+			addon:MakePanelScrollable(child)
+			local content = child._hakScrollContent or child
+			local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 			if key == 'CacheOpener' then
-				-- Move title 15 pixels closer to the top (was -15)
 				title:SetPoint("TOPLEFT", 16, 0)
 			else
 				title:SetPoint("TOPLEFT", 16, -15)
 			end
 			title:SetText("HerosArmyKnife - " .. key)
-			builder(child)
+			builder(content)
 			child._hakNoHeader = true
+			if child._hakRefreshScrollHeight then child._hakRefreshScrollHeight() end
 		end
 	end
 	addon.optionsPanelBuiltChildren = true
@@ -382,17 +509,26 @@ if not addon.modulesOptionsPanel then
 	mPanel.parent = panel.name
 	InterfaceOptions_AddCategory(mPanel)
 	addon.modulesOptionsPanel = mPanel
-	local title = mPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+	addon:MakePanelScrollable(mPanel)
+	local content = mPanel._hakScrollContent or mPanel
+	local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 	title:SetPoint("TOPLEFT", 16, -15)
 	title:SetText("HerosArmyKnife - Modules")
-	local desc = mPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	local desc = content:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
 	desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
 	desc:SetWidth(500)
 	desc:SetJustifyH("LEFT")
 	desc:SetText("Enable or disable modules. Disabling hides its toolbar icon and prevents its interactive features. (Underlying code remains loaded until next UI reload.)")
-	local container = addon.CreateThemedFrame and addon:CreateThemedFrame(mPanel, "HAK_ModulesEnableContainer", 600, 360, 'subpanel') or CreateFrame("Frame", "HAK_ModulesEnableContainer", mPanel)
+	local container = addon.CreateThemedFrame and addon:CreateThemedFrame(content, "HAK_ModulesEnableContainer", 600, 360, 'subpanel') or CreateFrame("Frame", "HAK_ModulesEnableContainer", content)
 	container:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -12)
 	if not container:GetWidth() or container:GetWidth()==0 then container:SetSize(600,360) end
+	mPanel._hakRefreshScrollHeight = function()
+		local bottomMost = container:GetBottom() or content:GetBottom()
+		local heightNeeded = (title:GetTop() or 0) - (bottomMost or 0)
+		if heightNeeded < 300 then heightNeeded = 300 end
+		content:SetHeight(heightNeeded + 60)
+	end
+	mPanel._hakRefreshScrollHeight()
 	mPanel.refresh = function()
 		BuildModuleCheckboxes(container)
 	end

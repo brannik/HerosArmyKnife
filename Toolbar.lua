@@ -4,6 +4,92 @@ local btnSize = 24
 addon.toolbarButtons = {}
 addon.moduleRegistry = addon.moduleRegistry or {}
 
+-- Helper: derive coloring for action hint lines in tooltips
+local function HAK_ColorizeTooltipLine(line)
+    if not line or line == "" then return line, 1,1,1 end
+    -- Preserve explicit color codes provided by module authors
+    if line:find("^|cff%x%x%x%x%x%x") then return line, 1,1,1 end
+    local l = line:gsub("^%s+","")
+    local lower = l:lower()
+    -- Inline ON/OFF state coloring (replace standalone words)
+    local function colorStateTokens(src)
+        -- Replace whole-word ON / OFF (any case) with colored tokens
+        src = src:gsub("%f[%a][Oo][Nn]%f[%A]", "|cff00ff00ON|r")
+        src = src:gsub("%f[%a][Oo][Ff][Ff]%f[%A]", "|cffff2020OFF|r")
+        return src
+    end
+    line = colorStateTokens(line)
+    -- Map leading action verbs / modifiers to distinct colors
+    if lower:find("^click") or lower:find("^left") then
+        return line, 0.15, 0.95, 0.15
+    elseif lower:find("^right") then
+        return line, 1, 0.55, 0.1
+    elseif lower:find("^shift") then
+        return line, 0.85, 0.5, 1
+    elseif lower:find("^ctrl") or lower:find("^control") then
+        return line, 1, 1, 0.3
+    elseif lower:find("^alt") then
+        return line, 0.25, 0.9, 0.9
+    elseif lower:find("^drag") or lower:find("^drag frame") then
+        return line, 0.6, 0.8, 1
+    elseif lower:find("^debug") then
+        return line, 1, 0.3, 0.8
+    end
+    return line, 0.95, 0.95, 0.95
+end
+
+-- Normalize action lines: ensure each action hint appears on its own row.
+local function HAK_ExpandActionLines(lines)
+    if type(lines) ~= 'table' then return lines end
+    if #lines == 0 then return lines end
+    local expanded = {}
+    for i, line in ipairs(lines) do
+        if i == 1 then
+            table.insert(expanded, line)
+        else
+            local work = line
+            -- Split first on semicolons which commonly separate actions
+            local didSplit = false
+            if work:find(';') then
+                for part in work:gmatch("[^;]+") do
+                    local trimmed = part:gsub("^%s+", ""):gsub("%s+$", "")
+                    if trimmed ~= "" then table.insert(expanded, trimmed) end
+                end
+                didSplit = true
+            end
+            -- If not split yet, attempt split on ' | '
+            if not didSplit and work:find('%s|%s') then
+                for part in work:gmatch("[^|]+") do
+                    local trimmed = part:gsub("^%s+", ""):gsub("%s+$", "")
+                    if trimmed ~= "" then table.insert(expanded, trimmed) end
+                end
+                didSplit = true
+            end
+            -- If still not split and contains multiple comma-separated action tokens (heuristic: contains ':' and ',')
+            if not didSplit and work:find(':') and work:find(',') then
+                local prefix, rest = work:match("^(.-:%s*)(.+)$")
+                if prefix and rest then
+                    local firstInserted = false
+                    for part in rest:gmatch("[^,]+") do
+                        local trimmed = part:gsub("^%s+", ""):gsub("%s+$", "")
+                        if trimmed ~= "" then
+                            local combined = firstInserted and trimmed or (prefix .. trimmed)
+                            table.insert(expanded, combined)
+                            firstInserted = true
+                        end
+                    end
+                    didSplit = true
+                end
+            end
+            -- Fallback: just add original line
+            if not didSplit then
+                table.insert(expanded, work)
+            end
+        end
+    end
+    return expanded
+end
+
 function addon:RegisterToolbarIcon(key, texture, onClick, onTooltip)
     if not key then return end
     addon.moduleRegistry[key] = { key = key, texture = texture, onClick = onClick, onTooltip = onTooltip }
@@ -47,17 +133,30 @@ function addon:CreateToolbarButton(key, texture, onClick, onTooltip)
         if onTooltip then
             local anchor = addon:GetTooltipAnchor(f)
             GameTooltip:SetOwner(f, anchor)
+            -- Mark tooltip as addon-owned so font pass can target it
+            GameTooltip._hakAddonTooltip = true
             local lines = onTooltip(f)
             if type(lines) == "table" then
                 GameTooltip:ClearLines()
-                for i, line in ipairs(lines) do
+                local linesExpanded = HAK_ExpandActionLines(lines)
+                for i, line in ipairs(linesExpanded) do
                     if i == 1 then
-                        GameTooltip:AddLine(line, 0, 1, 0)
+                        -- Title line stays green unless explicitly colored
+                        local title = line
+                        if title:find("^|cff%x%x%x%x%x%x") then
+                            GameTooltip:AddLine(title)
+                        else
+                            GameTooltip:AddLine(title, 0, 1, 0)
+                        end
                     else
-                        GameTooltip:AddLine(line, 1, 1, 1, true)
+                        local colored, r,g,b = HAK_ColorizeTooltipLine(line)
+                        GameTooltip:AddLine(colored, r, g, b, true)
                     end
                 end
                 GameTooltip:Show()
+                if addon.ApplyTooltipFont then addon:ApplyTooltipFont(GameTooltip) end
+                -- Clear flag afterward to avoid styling unrelated future tooltips
+                GameTooltip._hakAddonTooltip = nil
             end
         end
     end
@@ -151,7 +250,9 @@ function addon:RebuildToolbar()
     addon:LayoutToolbar()
     if addon.ApplyTheme then addon:ApplyTheme() end
     -- Post-build hook: allow modules to refresh visuals (e.g., MythicPlusHelper glow)
-    if addon.MythicPlusHelper_ForceRefresh and addon:IsModuleEnabled("MythicPlusHelper") then addon:MythicPlusHelper_ForceRefresh() end
+        if addon.MythicPlusHelper_ForceRefresh and addon:IsModuleEnabled("MythicPlusHelper") then addon:MythicPlusHelper_ForceRefresh() end
+        if addon.MPlus_UpdateMonitoringIndicator and addon:IsModuleEnabled("MythicPlusHelper") then addon.MPlus_UpdateMonitoringIndicator() end
+        if _G.RareTracker_UpdateIndicator then _G.RareTracker_UpdateIndicator() end
 end
 
 function addon:BuildToolbar()

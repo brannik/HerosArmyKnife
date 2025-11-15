@@ -74,6 +74,10 @@ addon.frame:SetScript("OnEvent", function(self, event, ...)
             if t.padRight == nil then t.padRight = 4 end
             t.locked = t.locked == true -- ensure boolean
             s.modulesEnabled = s.modulesEnabled or {}
+            -- Ensure development DebugTools module defaults to enabled when present (can be manually disabled if desired)
+            if s.modulesEnabled.DebugTools == nil then
+                s.modulesEnabled.DebugTools = true
+            end
             s.themeName = s.themeName or "Default"
             s.moduleSettings = s.moduleSettings or {}
             -- Notifications settings defaults

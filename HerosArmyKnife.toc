@@ -21,3 +21,5 @@ Modules\MythicPlusHelper\Recruitment.lua
 Modules\MythicPlusHelper\MessageChannel.lua
 Modules\MythicPlusHelper\MythicPlusHelper.lua
 Modules\RareTracker\RareTracker.lua
+## Optional development module (safe to delete before release)
+Modules\Debug\DebugTools.lua

@@ -1,0 +1,22 @@
+# HerosArmyKnife .gitignore
+# Ignore optional development/debug module so it is not uploaded
+Modules/Debug/
+
+# WoW / OS clutter
+*.bak
+*.tmp
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Editor settings
+.vscode/
+.idea/
+
+# Logs / profiling
+*.log
+
+# Misc archives
+*.zip
+*.7z
+*.rar

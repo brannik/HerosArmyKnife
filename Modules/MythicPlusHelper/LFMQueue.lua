@@ -71,6 +71,7 @@ q.activeRows = q.activeRows or {}
 q._declinedLastTrim = q._declinedLastTrim or 0
 q.suspended = q.suspended or false
 q._lastSoundTime = q._lastSoundTime or 0
+q.acceptThrottleSeconds = q.acceptThrottleSeconds or 3 -- minimum seconds between accepts of same entry
 
 -- Forward declare to allow early use in EvaluateActivation
 local EnsureWindow
@@ -140,7 +141,10 @@ function EnsureWindow()
     close:SetScript("OnClick", function()
         -- Mark all current entries declined and clear list
         for _, e in ipairs(q.entries) do
-            q.declined[e.norm] = time()
+            if not e.norm then
+                e.norm = (e.sender or "?").."|"..((e.msg or ""):lower():gsub("|c%x%x%x%x%x%x%x%x"," "):gsub("|r"," "):gsub("{.-}",""))
+            end
+            if e.norm then q.declined[e.norm] = time() end
         end
         q.entries = {}
         q:RefreshList()
@@ -178,7 +182,10 @@ function EnsureWindow()
         for i = #q.entries, 1, -1 do
             local e = q.entries[i]
             if now - e.time > q.expireSeconds then
-                q.declined[e.norm] = now
+                if not e.norm then
+                    e.norm = (e.sender or "?").."|"..((e.msg or ""):lower():gsub("|c%x%x%x%x%x%x%x%x"," "):gsub("|r"," "):gsub("{.-}",""))
+                end
+                if e.norm then q.declined[e.norm] = now end
                 table.remove(q.entries, i)
                 changed = true
             end
@@ -239,12 +246,32 @@ local function SetupRow(row, entry, yOffset)
     row.acceptBtn:SetPoint("TOPRIGHT", row, "TOPRIGHT", -8, btnY)
     row.acceptBtn:SetText("Accept")
     row.acceptBtn:SetScript("OnClick", function()
-        SendChatMessage("inv", "WHISPER", nil, entry.sender)
-        if addon.Notify then addon:Notify("Invited "..entry.sender, 'success') end
+        local now = time()
+        if entry._lastAccept and (now - entry._lastAccept) < (q.acceptThrottleSeconds or 3) then
+            if addon.Notify then addon:Notify("Accept throttled ("..(q.acceptThrottleSeconds or 3).."s)", 'warn') end
+            return
+        end
+        entry._lastAccept = now
+        local spec = addon.MPlusSpec or (addon.GetModuleSettings and addon:GetModuleSettings('MythicPlusHelper', {}).spec) or "DPS"
+        local ilvl = addon:GetPlayerItemLevel() or "?"
+        local whisper = string.format("hi, im %s and ilvl %s - inv", spec, ilvl)
+        SendChatMessage(whisper, "WHISPER", nil, entry.sender)
+        -- Mark declined to suppress reappearance, ensure norm exists
+        if not entry.norm then
+            entry.norm = (entry.sender or "?").."|"..((entry.msg or ""):lower():gsub("|c%x%x%x%x%x%x%x%x"," "):gsub("|r"," "):gsub("{.-}",""))
+        end
+        if entry.norm then q.declined[entry.norm] = now end
+        -- Auto-hide: remove entry from active list
+        for i,e in ipairs(q.entries) do if e == entry then table.remove(q.entries,i) break end end
+        q:RefreshList()
+        if addon.Notify then addon:Notify("Whisper sent to "..entry.sender, 'success') end
     end)
     row.declineBtn:SetText("Decline")
     row.declineBtn:SetScript("OnClick", function()
-        q.declined[entry.norm] = time()
+        if not entry.norm then
+            entry.norm = (entry.sender or "?").."|"..((entry.msg or ""):lower():gsub("|c%x%x%x%x%x%x%x%x"," "):gsub("|r"," "):gsub("{.-}",""))
+        end
+        if entry.norm then q.declined[entry.norm] = time() end
         for i, e in ipairs(q.entries) do if e == entry then table.remove(q.entries, i) break end end
         q:RefreshList()
     end)

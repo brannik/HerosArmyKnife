@@ -114,6 +114,64 @@ end
 
 addon:RegisterToolbarIcon("RareTracker", "Interface\\Icons\\Ability_Hunter_MasterMarksman", OnClick, OnTooltip)
 
+-- Monitoring indicator overlay (border) for RareTracker (global so toolbar can call it)
+function RareTracker_UpdateIndicator()
+    local btn = _G["HAKToolbarBtn_RareTracker"]
+    if not btn then return end
+    if not btn._rareTrackerOverlay then
+        local ov = btn:CreateTexture(nil, "OVERLAY")
+        ov:SetAllPoints(btn.texture)
+        ov:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        ov:SetBlendMode("ADD")
+        btn._rareTrackerOverlay = ov
+    end
+    if not btn._rareTrackerCorner then
+        local corner = btn:CreateTexture(nil, "OVERLAY")
+        corner:SetSize(8,8)
+        corner:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -1, -1)
+        corner:SetTexture("Interface\\Buttons\\UI-Quickslot") -- simple square
+        corner:SetBlendMode("ADD")
+        btn._rareTrackerCorner = corner
+    end
+    local s = GetSettings()
+    if s.monitoring then
+        btn._rareTrackerOverlay:Show()
+        btn._rareTrackerOverlay:SetVertexColor(0, 0.85, 1, 0.9) -- active cyan
+        btn._rareTrackerCorner:Show()
+        btn._rareTrackerCorner:SetVertexColor(0, 1, 0, 0.9) -- green corner when active
+    else
+        -- Show a faint red border & red corner to indicate disabled state
+        btn._rareTrackerOverlay:Show()
+        btn._rareTrackerOverlay:SetVertexColor(1, 0, 0, 0.4)
+        btn._rareTrackerCorner:Show()
+        btn._rareTrackerCorner:SetVertexColor(1, 0, 0, 0.7)
+    end
+end
+
+-- Proper click hook: update indicator after original logic
+local originalOnClick = OnClick
+local function RareTracker_WrappedClick(btn)
+    if originalOnClick then originalOnClick(btn) end
+    RareTracker_UpdateIndicator()
+end
+
+-- If button already exists, replace its click script; else poll until created
+local rtHookFrame = CreateFrame("Frame")
+rtHookFrame.t = 0
+rtHookFrame:SetScript("OnUpdate", function(self, elapsed)
+    self.t = self.t + elapsed
+    local btn = _G["HAKToolbarBtn_RareTracker"]
+    if btn and not btn._rareTrackerHooked then
+        btn:SetScript("OnClick", function() RareTracker_WrappedClick(btn) end)
+        btn._rareTrackerHooked = true
+        RareTracker_UpdateIndicator()
+    end
+    if self.t > 5 or (btn and btn._rareTrackerHooked) then self:SetScript("OnUpdate", nil) end
+end)
+
+-- Immediate attempt (covers case where toolbar is built later but we reload manually)
+RareTracker_UpdateIndicator()
+
 -- Module options
 -- Popup UI
 local popupFrame

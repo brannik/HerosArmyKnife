@@ -215,10 +215,45 @@ end
 
 -- Player item level helper
 local function GetPlayerItemLevel()
+    -- Prefer built-in API if present (some 3.3.5 cores backport this)
     if GetAverageItemLevel then
         local overall, equipped = GetAverageItemLevel()
         local val = equipped or overall
-        if val then return math.floor(val + 0.5) end
+        if val and val > 0 then return math.floor(val + 0.5) end
+    end
+    -- Fallback manual scan of equipped inventory slots (ignore shirt/tabard)
+    local slots = {
+        1, -- Head
+        2, -- Neck
+        3, -- Shoulder
+        5, -- Chest (skip 4 shirt)
+        6, -- Waist
+        7, -- Legs
+        8, -- Feet
+        9, -- Wrist
+        10, -- Hands
+        11, -- Finger 1
+        12, -- Finger 2
+        13, -- Trinket 1
+        14, -- Trinket 2
+        15, -- Back
+        16, -- Main hand
+        17, -- Off hand
+        18, -- Ranged / Relic
+    }
+    local total, count = 0, 0
+    for _, slot in ipairs(slots) do
+        local link = GetInventoryItemLink("player", slot)
+        if link then
+            local name, itemLink, quality, itemLevel = GetItemInfo(link)
+            if itemLevel and itemLevel > 0 then
+                total = total + itemLevel
+                count = count + 1
+            end
+        end
+    end
+    if count > 0 then
+        return math.floor((total / count) + 0.5)
     end
     return nil
 end
@@ -488,7 +523,7 @@ local function OnTooltip(btn)
         scanTip:SetHyperlink(keystoneInfo.link)
         for i=2, scanTip:NumLines() do -- skip first line (item name)
             local line = _G["HAK_MPlusScanTipTextLeft"..i]
-            if line then
+            if state then
                 local txt = line:GetText()
                 if txt and #txt>0 then
                     -- Simple heuristic: affix keywords or capitalized single words
@@ -497,6 +532,8 @@ local function OnTooltip(btn)
                     end
                 end
             end
+            -- Update visual indicator border
+            addon.MPlus_UpdateMonitoringIndicator()
         end
     end
     if #affixes > 0 then
@@ -567,7 +604,39 @@ addon:RegisterToolbarIcon("MythicPlusHelper", initialTexture, OnClick, OnTooltip
 UpdateIconAppearance()
 addon.MythicPlusHelper_ForceRefresh = function()
     ScanForKeystone(); UpdateIconAppearance()
+    addon.MPlus_UpdateMonitoringIndicator()
 end
+
+-- Monitoring state visual indicator (border overlay)
+function addon.MPlus_UpdateMonitoringIndicator()
+    local btn = _G["HAKToolbarBtn_MythicPlusHelper"]
+    if not btn then return end
+    -- Create overlay once
+    if not btn._mplusMonitorOverlay then
+        local ov = btn:CreateTexture(nil, "OVERLAY")
+        ov:SetAllPoints(btn.texture)
+        ov:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        ov:SetBlendMode("ADD")
+        btn._mplusMonitorOverlay = ov
+    end
+    if not btn._mplusCorner then
+        local corner = btn:CreateTexture(nil, "OVERLAY")
+        corner:SetSize(8,8)
+        corner:SetPoint("TOPRIGHT", btn, "TOPRIGHT", -1, -1)
+        corner:SetTexture("Interface\\Buttons\\UI-Quickslot")
+        corner:SetBlendMode("ADD")
+        btn._mplusCorner = corner
+    end
+    local s = GetSettings()
+    if s.monitoring then
+        btn._mplusMonitorOverlay:Show(); btn._mplusMonitorOverlay:SetVertexColor(0, 1, 0, 0.9)
+        btn._mplusCorner:Show(); btn._mplusCorner:SetVertexColor(0,1,0,0.9)
+    else
+        btn._mplusMonitorOverlay:Show(); btn._mplusMonitorOverlay:SetVertexColor(1,0,0,0.5) -- red faint when off
+        btn._mplusCorner:Show(); btn._mplusCorner:SetVertexColor(1,0,0,0.8)
+    end
+end
+
 
 -- Periodic scan (bag updates)
 local scanFrame = CreateFrame("Frame")
