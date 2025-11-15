@@ -1,35 +1,107 @@
 # HerosArmyKnife
 
-Movable toolbar addon for Ascension WoW providing a central, space-efficient place for utility module icons.
+A lightweight, modular toolbar addon for Ascension WoW (Wrath 3.3.5). Quickly access quality‑of‑life tools and gameplay helpers from a compact, draggable toolbar with clean theming and readable tooltips.
 
-## Current Features
-- Manifest (`HerosArmyKnife.toc`) declaring saved variables and core files.
-- Core loader (`Core.lua`) initializes persistent DB and builds toolbar on login.
-- Movable toolbar (`Toolbar.lua`) with drag-to-move and position persistence.
-- Options panel (`Options.lua`) explaining usage.
-- Slash command (`/hak`) for reload and opening options.
-- About icon module (`Modules/About.lua`) opens panel and shows tooltip/help.
+- Interface: 30300 (Wrath 3.3.5)
+- Game: Ascension client
+- SavedVariables: `HerosArmyKnifeDB`
 
-## Saved Variables
-- `HerosArmyKnifeDB.settings.toolbar` (point, x, y) for toolbar position.
+## Highlights
+- Movable toolbar with per‑module icons and colorized tooltips
+- Theme system plus scoped Morpheus font for addon UI only
+- Adjustable global font size for the addon UI
+- Scrollable Options UI with improved two‑column layout
+- Optional Debug module for safe, non‑destructive testing
 
-## Adding Modules
-1. Create a file in `Modules/YourModule.lua`.
-2. In it, call `addon:RegisterToolbarIcon("Key", "Interface\\Icons\\YourIcon", onClickFunc, tooltipFunc)`.
-3. Optionally add logic in `onClickFunc` or show multiple lines in the tooltip table.
-4. Add the file path to `HerosArmyKnife.toc` after existing module entries.
+## Install
+1. Download or clone this repository.
+2. Copy the `HerosArmyKnife` folder into your addons directory, for example:
+	 - Ascension launcher path: `Interface/AddOns/HerosArmyKnife`
+3. Relaunch the game (or type `/reload`).
+4. Enable the addon on the character select AddOns screen.
 
-## Quick Test
-1. Install addon in `Interface/AddOns/`.
-2. Log in; toolbar appears (center by default).
-3. Drag toolbar; position is saved.
-4. Click question mark icon for About / options.
-5. `/hak reload` to reload UI if needed.
+## Quick Start
+- Drag the toolbar by its frame to reposition it.
+- Right‑click the toolbar frame to access quick options.
+- Open the main options: `/hak options`.
+- Toggle modules from the Modules sub‑panel.
 
-## Next Ideas
-- Lock/scale settings for toolbar.
-- Additional utility modules (inventory, latency, memory usage, gear sets).
-- Per-character saved variables if needed.
-- Minimap integration or keybind shortcuts.
+### Slash Commands
+- `/hak options` or `/hak config`: Open the Options panel (invoked twice internally to ensure the category opens).
+- `/hak layout`: Rebuild the toolbar layout (apply spacing/scale/padding).
+- `/hak show`: Build and/or show the toolbar.
+- `/hak reload`: Reload the UI.
 
-Contributions: add modules following the pattern above. Ask if you want scaffolding for settings, localization, or performance profiling.
+## Configuration
+Open the Options panel from Interface → AddOns → HerosArmyKnife or via `/hak options`.
+
+- Orientation: Growth direction of the toolbar (horizontal/vertical).
+- Theme: Apply a theme to HAK frames and tooltips.
+- Icon Scale & Spacing: Size and gap between toolbar buttons.
+- Toolbar Padding: Fine‑tune the frame padding (top/bottom/left/right).
+- Font Size: Global Morpheus font size for addon UI elements.
+- Notifications: Where transient notifications appear (Chat or Center).
+- Lock Toolbar: Prevent dragging once positioned.
+
+The options view is scrollable. If you add many modules, scroll to reach all settings.
+
+## Modules
+Each toolbar icon maps to a self‑contained module with its own tooltip, click behavior, and (optionally) a settings page.
+
+- About: Overview window with credits and a Discord invite link (copy button in‑panel).
+- Settings: Central access to global options (plus Modules sub‑panel).
+- Reload: Quick reload shortcut.
+- Transmog: Placeholder entry.
+- SellTrash: Sells grey‑quality items at vendors; optional debug toggle.
+- CacheOpener: Detects likely cache/box items; opens sequentially with a delay; small grid UI with scroll.
+- MythicPlusHelper:
+	- Keystone scanning with icon display
+	- Monitoring indicator on toolbar icon
+	- LFM Queue watcher (channel filter, pattern matching)
+	- Recruitment helper (interval broadcasts, role needs, custom text)
+	- Party Info sharing via addon messages (spec + ilvl)
+- RareTracker: Detects rare/rare‑elite on target/mouseover; optional auto‑mark, popup & sound; repeat‑delay throttle.
+- DebugTools (optional): Safe test harness for module features (sample queue messages, rare popup, etc.). Safe to delete before release.
+
+For per‑module usage notes and settings, see `docs/Modules.md`.
+
+## Compatibility
+- Built for Ascension client based on Wrath 3.3.5 (`## Interface: 30300`).
+- Fonts/themes are applied only to HAK’s frames and tooltips; the rest of the UI remains untouched.
+
+## Troubleshooting
+- Options don’t scroll or some controls appear out of frame:
+	- Re‑open via `/hak options` (Blizzard panel quirk); scrolling is enabled.
+	- Use `/reload` after first install/update.
+- Missing textures or icon tints:
+	- Themes fall back gracefully. If an icon is missing on your client, a question mark icon is used.
+- SellTrash didn’t trigger at vendor:
+	- Ensure the module is enabled in Modules and "Auto" is on in its module options.
+- LFM window empty:
+	- Enable monitoring in the MythicPlusHelper context menu or options.
+
+## Development
+HerosArmyKnife is intentionally modular. Typical module components:
+
+- Register toolbar icon: `addon:RegisterToolbarIcon(key, texture, onClick, onTooltip)`
+- Optional options page: `addon:RegisterModuleOptions(key, function(panel) ... end)`
+- Optional init defaults: `addon:RegisterInit(function() addon:GetModuleSettings(key, defaults) end)`
+- Themed frames: `addon:CreateThemedFrame(parent, name, w, h, variant)` with `variant` `panel`/`subpanel`.
+- Tooltip colorization: Provide lines; the toolbar enhances action verbs and ON/OFF tokens automatically.
+
+Repository structure (selected):
+- `Core.lua` – bootstrap and shared helpers
+- `Theme.lua` – theme registry and application; scoped font utilities
+- `Toolbar.lua` – toolbar creation, tooltip formatting, indicators
+- `Options.lua` – main options panel (scrollable) and Modules sub‑panel
+- `Modules/*` – feature modules (About, SellTrash, CacheOpener, MythicPlusHelper, RareTracker, DebugTools)
+
+For local testing, the DebugTools module can inject safe samples and open test UIs.
+
+## Support
+- Open an issue on GitHub with steps to reproduce.
+- For community chat, use the Discord invite link shown in the About window.
+
+## Contributing and Changelog
+- Contributing guide: see `CONTRIBUTING.md` for branching, coding style, and PR checklist.
+- Changelog: see `CHANGELOG.md` for release notes and recent changes.
