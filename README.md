@@ -1,3 +1,13 @@
+## Example images</br>
+![Alt text](images/ToolBar.png)</br>
+![Alt text](images/tooltip.png)</br>
+![Alt text](images/Recruitment.png)</br>
+![Alt text](images/LFGMonitor.png)</br>
+![Alt text](images/CacheOpen_two.png)</br>
+![Alt text](images/CacheOpen.png)</br>
+![Alt text](images/CacheOpen_tree.png)</br>
+
+
 # HerosArmyKnife
 
 A lightweight, modular toolbar addon for Ascension WoW (Wrath 3.3.5). Quickly access quality‑of‑life tools and gameplay helpers from a compact, draggable toolbar with clean theming and readable tooltips.
