@@ -15,11 +15,36 @@ q.patterns = q.patterns or {
     lfmTankPatterns    = {"lf.*tank", "need.*tank", "keystone.*%d+%)].*tank"},
     lfmHealPatterns    = {"lf.*heal", "need.*heal", "keystone.*%d+%)].*heal"},
     lfmAllPatterns     = {"lf.*kara", "lf.*%f[%a]kc%f[%A]", "keystone.*%d+%)].*%f[%a]all%f[%A]", "lf.*keystone.*%d+%)]", "need.*%f[%a]all%f[%A]", "keystone.*%d+%)].*lf"},
+    guildRecruitHints  = {"recruit", "recrut", "recruiting", "recruting", "join", "inv", "invite"},
 }
+
+local function IsGuildRecruitment(rawMsg)
+    if not rawMsg or rawMsg == "" then return false end
+    local msgLower = rawMsg:lower():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("{.-}", "")
+    if not msgLower:find("guild") and not msgLower:find("<[^>]+>") then return false end
+    -- Require an action hint near guild context to avoid false positives like "guild group"
+    local hasAction = false
+    for _, h in ipairs(q.patterns.guildRecruitHints) do
+        if msgLower:find(h) then hasAction = true break end
+    end
+    if not hasAction then return false end
+    -- Common phrasing checks
+    if msgLower:find("join[^%a]*our[^%a]*guild") then return true end
+    if msgLower:find("recr%a*[^%a]*for[^%a]*guild") then return true end
+    if msgLower:find("guild[^%a]*recr%a*") then return true end
+    if msgLower:find("inv[^%a]*to[^%a]*guild") then return true end
+    if msgLower:find("<[^>]+>[^%a]*recr%a*") then return true end
+    if msgLower:find("recr%a*[^%a]*<[^>]+>") then return true end
+    -- Fallback: mention guild plus an action verb
+    if msgLower:find("guild") and hasAction then return true end
+    return false
+end
 
 local function MessageMatchesAnyRecruitPattern(rawMsg)
     if not rawMsg or rawMsg == "" then return false end
     local msgLower = rawMsg:lower():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("{.-}", "")
+    -- Exclude guild recruitment from LFG feed
+    if IsGuildRecruitment(msgLower) then return false end
     local p = q.patterns
     local matchesMsLeveling, matchesMsGold, matchesLfmDps, matchesLfmTank, matchesLfmHeal = false, false, false, false, false
     for _, pattern in ipairs(p.msLevelingPatterns) do if msgLower:match(pattern) then matchesMsLeveling = true break end end
