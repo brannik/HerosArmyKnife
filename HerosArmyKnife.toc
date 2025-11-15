@@ -1,0 +1,22 @@
+## Interface: 30300
+## Title: HerosArmyKnife
+## Notes: Utility toolkit addon skeleton for Ascension WoW.
+## Author: Agset
+## Version: 0.1.0
+## SavedVariables: HerosArmyKnifeDB
+
+Core.lua
+Theme.lua
+Toolbar.lua
+Options.lua
+Slash.lua
+Modules\About\About.lua
+Modules\Settings\Settings.lua
+Modules\Reload\Reload.lua
+Modules\Transmog\Transmog.lua
+Modules\SellTrash\SellTrash.lua
+Modules\CacheOpener\CacheOpener.lua
+Modules\MythicPlusHelper\LFMQueue.lua
+Modules\MythicPlusHelper\Recruitment.lua
+Modules\MythicPlusHelper\MessageChannel.lua
+Modules\MythicPlusHelper\MythicPlusHelper.lua
