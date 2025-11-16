@@ -12,6 +12,10 @@ local function handler(msg)
         ReloadUI()
         return
     elseif msg == "options" or msg == "config" then
+        if InCombatLockdown and InCombatLockdown() then
+            if addon.Notify then addon:Notify("Cannot open options in combat.", 'warn') else DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99HerosArmyKnife|r: Cannot open options in combat.") end
+            return
+        end
         if InterfaceOptionsFrame then
             InterfaceOptionsFrame_OpenToCategory("HerosArmyKnife")
             InterfaceOptionsFrame_OpenToCategory("HerosArmyKnife")

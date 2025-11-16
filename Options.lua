@@ -305,10 +305,43 @@ local padRight = CreatePadSlider("HAK_PadRight", "Pad Right", padBottom, 0, -24)
 -- Lock checkbox
 local RIGHT_COL_X = 300 -- shift right column a bit left to reclaim space
 
+-- Font dropdown (addon-only font for HAK windows/tooltips) placed above Notifications
+local fontLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+fontLabel:SetPoint("TOPLEFT", themeDrop, "TOPLEFT", RIGHT_COL_X, -2)
+fontLabel:SetText("Font")
+
+local fontDrop = CreateFrame("Frame", "HAK_FontDropdown", panel, "UIDropDownMenuTemplate")
+fontDrop:SetPoint("TOPLEFT", fontLabel, "BOTTOMLEFT", -16, -4)
+
+local function Font_OnClick(self)
+	HerosArmyKnifeDB.settings.fontName = self.value
+	UIDropDownMenu_SetSelectedValue(fontDrop, self.value)
+	UIDropDownMenu_SetText(fontDrop, self.value)
+	if addon.ApplyTheme then addon:ApplyTheme() end -- reapply fonts to addon windows
+	if addon.Notify then addon:Notify("Font set to "..tostring(self.value), 'success') end
+end
+
+local function InitFontDropdown()
+	safeSettings()
+	UIDropDownMenu_Initialize(fontDrop, function(self, level)
+		for name, info in pairs(addon.fontsAvailable or {}) do
+			local item = UIDropDownMenu_CreateInfo()
+			item.text = name
+			item.value = name
+			item.func = Font_OnClick
+			item.checked = (name == HerosArmyKnifeDB.settings.fontName)
+			UIDropDownMenu_AddButton(item)
+		end
+	end)
+	UIDropDownMenu_SetSelectedValue(fontDrop, HerosArmyKnifeDB.settings.fontName)
+	UIDropDownMenu_SetText(fontDrop, HerosArmyKnifeDB.settings.fontName)
+end
+fontDrop:HookScript("OnShow", function() if not fontDrop._initialized then InitFontDropdown(); fontDrop._initialized = true end end)
+
 -- Notifications section
 local notifyHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
--- Place notifications nearer the top (aligned with theme dropdown) to remove empty upper-right gap
-notifyHeader:SetPoint("TOPLEFT", themeDrop, "TOPLEFT", RIGHT_COL_X, -2)
+-- Place notifications below the font dropdown in the right column
+notifyHeader:SetPoint("TOPLEFT", fontDrop, "BOTTOMLEFT", 16, -12)
 notifyHeader:SetText("Notifications")
 
 local notifyModeLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -420,6 +453,10 @@ panel.refresh = function()
 	if themeDrop._initialized then
 		UIDropDownMenu_SetSelectedValue(themeDrop, HerosArmyKnifeDB.settings.themeName)
 		UIDropDownMenu_SetText(themeDrop, HerosArmyKnifeDB.settings.themeName)
+	end
+	if fontDrop and fontDrop._initialized then
+		UIDropDownMenu_SetSelectedValue(fontDrop, HerosArmyKnifeDB.settings.fontName)
+		UIDropDownMenu_SetText(fontDrop, HerosArmyKnifeDB.settings.fontName)
 	end
 	scaleSlider:SetValue(t.iconScale)
 	spacingSlider:SetValue(t.iconSpacing or 6)

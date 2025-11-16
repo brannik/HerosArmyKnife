@@ -62,7 +62,7 @@ Each toolbar icon maps to a self‑contained module with its own tooltip, click 
 - Settings: Central access to global options (plus Modules sub‑panel).
 - Reload: Quick reload shortcut.
 - Transmog: Placeholder entry.
-- SellTrash: Sells grey‑quality items at vendors; optional debug toggle.
+- SellTrash: Sells grey‑quality items and user‑tracked vendor items at vendors; optional debug toggle.
 - CacheOpener: Detects likely cache/box items; opens sequentially with a delay; small grid UI with scroll.
 - MythicPlusHelper:
 	- Keystone scanning with icon display

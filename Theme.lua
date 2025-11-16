@@ -264,11 +264,29 @@ function addon:InitTheme()
     addon:ApplyTheme()
 end
 
--- Global Morpheus font enforcement
-local MORPHEUS_FONT = "Fonts\\MORPHEUS.ttf"
+-- Addon-scoped font registry and application
+addon.fontsAvailable = addon.fontsAvailable or {
+    ["Morpheus"]         = { path = "Fonts\\MORPHEUS.ttf" },
+    ["Friz Quadrata"]    = { path = "Fonts\\FRIZQT__.TTF" },
+    ["Arial Narrow"]     = { path = "Fonts\\ARIALN.TTF" },
+    ["Skurri"]           = { path = "Fonts\\SKURRI.TTF" },
+    ["Blizzard Default"] = { path = "BLIZZARD" },   -- resolves from GameFontNormal
+    ["Tooltip Default"]  = { path = "TOOLTIP" },    -- resolves from GameTooltipText
+}
+
+local function HAK_GetSelectedFontPath()
+    local name = HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.fontName or "Morpheus"
+    local e = addon.fontsAvailable and addon.fontsAvailable[name]
+    if not e then return "Fonts\\MORPHEUS.ttf" end
+    if e.path == "BLIZZARD" then local f = GameFontNormal and select(1, GameFontNormal:GetFont()); if f then return f end end
+    if e.path == "TOOLTIP" then local f = GameTooltipText and select(1, GameTooltipText:GetFont()); if f then return f end end
+    return e.path or "Fonts\\MORPHEUS.ttf"
+end
+
 function addon:ForceGlobalFont()
     -- Scoped Morpheus application: ONLY affect addon-created frames, not global UI fonts.
-    if not MORPHEUS_FONT then return end
+    local FONT_PATH = HAK_GetSelectedFontPath()
+    if not FONT_PATH then return end
     local baseSize =  (HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.fontSize) or 14
     local function deriveSize(orig)
         if not orig then return baseSize end
@@ -283,9 +301,9 @@ function addon:ForceGlobalFont()
         local _, size, outline = fs:GetFont()
         local finalSize = deriveSize(size)
         if outline and outline ~= "" then
-            fs:SetFont(MORPHEUS_FONT, finalSize, outline)
+            fs:SetFont(FONT_PATH, finalSize, outline)
         else
-            fs:SetFont(MORPHEUS_FONT, finalSize, "OUTLINE")
+            fs:SetFont(FONT_PATH, finalSize, "OUTLINE")
         end
     end
     -- Iterate themed frames and all their fontstring children
@@ -331,7 +349,8 @@ end
 
 -- Apply Morpheus to tooltip lines for addon-generated tooltips
 function addon:ApplyTooltipFont(tt)
-    if not tt or not tt.GetName or not MORPHEUS_FONT then return end
+    local FONT_PATH = HAK_GetSelectedFontPath()
+    if not tt or not tt.GetName or not FONT_PATH then return end
     local name = tt:GetName() or ""
     if not tt._hakAddonTooltip then return end
     local baseSize =  (HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.fontSize) or 14
@@ -339,8 +358,8 @@ function addon:ApplyTooltipFont(tt)
     for i=1,num do
         local l = _G[name.."TextLeft"..i]
         local r = _G[name.."TextRight"..i]
-        if l and l.SetFont then local _, sz, outline = l:GetFont(); l:SetFont(MORPHEUS_FONT, baseSize, outline ~= "" and outline or "OUTLINE") end
-        if r and r.SetFont then local _, sz, outline = r:GetFont(); r:SetFont(MORPHEUS_FONT, baseSize, outline ~= "" and outline or "OUTLINE") end
+        if l and l.SetFont then local _, sz, outline = l:GetFont(); l:SetFont(FONT_PATH, baseSize, outline ~= "" and outline or "OUTLINE") end
+        if r and r.SetFont then local _, sz, outline = r:GetFont(); r:SetFont(FONT_PATH, baseSize, outline ~= "" and outline or "OUTLINE") end
     end
     -- Dynamic tooltip scaling to avoid overflow when font size increases
     local scaleFactor = 1
@@ -360,6 +379,8 @@ function addon:ApplyTooltipTheme()
     if not HerosArmyKnifeDB or not HerosArmyKnifeDB.settings then return end
     local theme = addon.themes[HerosArmyKnifeDB.settings.themeName]
     if not theme then return end
+    -- Avoid touching Blizzard tooltips during combat to minimize taint risk
+    if InCombatLockdown and InCombatLockdown() then return end
     local bg = (theme.backgrounds and theme.backgrounds.tooltip) or (theme.backgrounds and theme.backgrounds.default) or theme.background
     local border = (theme.borders and theme.borders.tooltip) or (theme.borders and theme.borders.default) or theme.border
     local tooltips = {

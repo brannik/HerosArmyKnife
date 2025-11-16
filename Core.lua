@@ -79,6 +79,8 @@ addon.frame:SetScript("OnEvent", function(self, event, ...)
                 s.modulesEnabled.DebugTools = true
             end
             s.themeName = s.themeName or "Default"
+            -- Font selection (addon-only). Values map to Theme.lua font registry keys.
+            s.fontName = s.fontName or "Morpheus"
             s.moduleSettings = s.moduleSettings or {}
             -- Notifications settings defaults
             s.notifications = s.notifications or { mode = 'CHAT' }
@@ -130,15 +132,20 @@ local function EnsureNotifyParent()
 end
 
 local function ReflowNotes()
-    for i, n in ipairs(activeNotes) do
+    local y = 0
+    local gap = 6
+    for _, n in ipairs(activeNotes) do
         n:ClearAllPoints()
-        n:SetPoint("TOP", notifyParent, "TOP", 0, -(i-1)*34)
+        n:SetPoint("TOP", notifyParent, "TOP", 0, -y)
+        local h = n:GetHeight() or 32
+        y = y + h + gap
     end
 end
 
 local function CreateCenterNote(msg, severity, iconTex, color)
     EnsureNotifyParent()
     local f = CreateFrame("Frame", nil, notifyParent, "BackdropTemplate")
+    -- Initial size; width will be adjusted dynamically to fit text
     f:SetSize(320, 32)
     f:SetBackdrop({ bgFile="Interface/Tooltips/UI-Tooltip-Background", edgeFile="Interface/Tooltips/UI-Tooltip-Border", tile=true, tileSize=16, edgeSize=12, insets={left=2,right=2,top=2,bottom=2} })
     f:SetBackdropColor(0,0,0,0.85)
@@ -154,6 +161,25 @@ local function CreateCenterNote(msg, severity, iconTex, color)
     local r,g,b = unpack(color)
     f.text:SetTextColor(r,g,b,1)
     f.text:SetText(msg)
+    -- Word-wrap text and size frame width/height dynamically
+    do
+        local iconW = 26
+        local padL, padIcon, padR, padTB = 6, 8, 8, 4
+        local screenMax = UIParent and math.floor((UIParent:GetWidth() or 1024) * 0.9) or 900
+        local maxFrameW = math.max(300, math.min(520, screenMax))
+        local minFrameW = 180
+        -- Compute natural text width, then clamp to available text area to wrap if needed
+        local naturalTextW = math.ceil(f.text:GetStringWidth() or 0)
+        local maxTextW = maxFrameW - (padL + iconW + padIcon + padR)
+        local useTextW = math.max(80, math.min(naturalTextW, maxTextW))
+        if f.text.SetNonSpaceWrap then f.text:SetNonSpaceWrap(true) end
+        f.text:SetWidth(useTextW)
+        local textH = math.ceil(f.text:GetStringHeight() or f.text:GetHeight() or 14)
+        local frameW = padL + iconW + padIcon + useTextW + padR
+        frameW = math.max(minFrameW, math.min(frameW, maxFrameW))
+        local frameH = math.max(26 + padTB*2, textH + padTB*2)
+        f:SetSize(frameW, frameH)
+    end
     f.age, f.life, f.fade = 0, 4, 0.7
     f:SetAlpha(0)
     f:SetScript("OnUpdate", function(self, elapsed)

@@ -5,20 +5,79 @@ local DEFAULT_TRANSMOG_MACRO = [[/run local c=C_AppearanceCollection for b=0,4 d
 
 addon:RegisterInit(function()
     if addon.GetModuleSettings then
-        local s = addon:GetModuleSettings('Transmog', { macro = DEFAULT_TRANSMOG_MACRO, debug = false })
+        local s = addon:GetModuleSettings('Transmog', { macro = DEFAULT_TRANSMOG_MACRO, debug = false, useMacro = false })
         if not s.macro or s.macro == '' then s.macro = DEFAULT_TRANSMOG_MACRO end
     end
 end)
 
 local function GetSettings()
-    if addon.GetModuleSettings then return addon:GetModuleSettings('Transmog', { macro = DEFAULT_TRANSMOG_MACRO, debug = false }) end
-    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Transmog or { macro = "" }
+    if addon.GetModuleSettings then return addon:GetModuleSettings('Transmog', { macro = DEFAULT_TRANSMOG_MACRO, debug = false, useMacro = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.Transmog or { macro = "", useMacro = false }
+end
+
+-- Internal collector (recommended): avoids /run macros to reduce taint
+local function ExecuteCollector()
+    local okAny = false
+    local errors = 0
+    local c = _G.C_AppearanceCollection or _G.C_Appearance or {}
+    local apiCollect = c.CollectItemAppearance or (C_AppearanceCollection and C_AppearanceCollection.CollectItemAppearance)
+    local apiGetId = (C_Appearance and C_Appearance.GetItemAppearanceID) or (c.GetItemAppearanceID)
+    if not apiCollect or not apiGetId then
+        if addon.Notify then addon:Notify("Transmog API missing on this client.", 'warn') elseif addon.Print then addon.Print("Transmog API missing on this client.") end
+        return
+    end
+    for bag=0,4 do
+        local slots = GetContainerNumSlots and GetContainerNumSlots(bag) or 0
+        for slot=1,slots do
+            local itemID = GetContainerItemID and GetContainerItemID(bag, slot)
+            if itemID then
+                local aID
+                local ok1, err1 = pcall(function() aID = apiGetId(itemID) end)
+                if ok1 and aID then
+                    local collected = false
+                    local ok2 = pcall(function() collected = (C_AppearanceCollection and C_AppearanceCollection.IsAppearanceCollected and C_AppearanceCollection.IsAppearanceCollected(aID)) or false end)
+                    if ok2 and not collected then
+                        local ok3 = pcall(function() apiCollect(itemID) end)
+                        if ok3 then okAny = true else errors = errors + 1 end
+                    end
+                else
+                    errors = errors + 1
+                end
+            end
+        end
+    end
+    if okAny then
+        if addon.Notify then addon:Notify("Collected new appearances from bags.", 'success') elseif addon.Print then addon.Print("Collected new appearances from bags.") end
+    else
+        if addon.Notify then addon:Notify("No new appearances found.", 'info') elseif addon.Print then addon.Print("No new appearances found.") end
+    end
+end
+
+local function NormalizeNewlines(text)
+    if not text then return "" end
+    text = tostring(text)
+    text = text:gsub("\r\n", "\n"):gsub("\r", "\n")
+    return text
 end
 
 local function ExecuteMacro()
     local s = GetSettings()
-    local macro = s.macro or ''
+    local macro = NormalizeNewlines(s.macro or '')
     if macro == '' then if addon.Print then addon.Print("Transmog macro empty.") end return end
+    -- Prefer RunMacroText for full macro compatibility when available and allowed
+    if type(RunMacroText) == "function" then
+        if InCombatLockdown and InCombatLockdown() then
+            if addon.Notify then addon:Notify("Cannot run macro during combat.", 'warn') elseif addon.Print then addon.Print("Cannot run macro during combat.") end
+            return
+        end
+        local ok, err = pcall(RunMacroText, macro)
+        if ok then
+            if addon.Print then addon.Print("|cff00ff00Transmog macro executed.|r") end
+            return
+        else
+            if addon.Print then addon.Print("RunMacroText failed, falling back. "..tostring(err)) end
+        end
+    end
     -- Split macro into lines and execute /run or /script parts
     for line in string.gmatch(macro, "[^\n]+") do
         line = line:gsub("^%s+", ""):gsub("%s+$", "")
@@ -42,8 +101,24 @@ local function ExecuteMacro()
 end
 
 local function OnClick(btn)
-    -- Fallback direct execution if secure button not yet ready
-    ExecuteMacro()
+    local s = GetSettings()
+    -- If user opted into macro mode and the secure overlay exists, let it handle the click.
+    if s.useMacro then
+        local overlay = _G["HAK_TransmogSecureButton"]
+        if overlay and overlay:IsShown() then return end
+        if InCombatLockdown and InCombatLockdown() then
+            if addon.Notify then addon:Notify("Cannot run macro during combat.", 'warn') elseif addon.Print then addon.Print("Cannot run macro during combat.") end
+            return
+        end
+        ExecuteMacro()
+        return
+    end
+    -- Recommended internal collector path
+    if InCombatLockdown and InCombatLockdown() then
+        if addon.Notify then addon:Notify("Cannot collect during combat.", 'warn') elseif addon.Print then addon.Print("Cannot collect during combat.") end
+        return
+    end
+    ExecuteCollector()
 end
 
 local function OnTooltip(btn)
@@ -65,12 +140,22 @@ local secureReadyFrame
 local function Transmog_EnsureSecureButton()
     local s = GetSettings()
     local btn = _G["HAKToolbarBtn_Transmog"]
-    if not btn or btn._hakSecureAttached then return end
+    if not btn then return end
+    -- Only attach secure button in macro mode
+    if not s.useMacro then
+        local sb = _G["HAK_TransmogSecureButton"]
+        if sb then sb:Hide(); sb:EnableMouse(false); btn._hakSecureAttached = nil end
+        return
+    end
+    if btn._hakSecureAttached then return end
     local sb = CreateFrame("Button", "HAK_TransmogSecureButton", btn, "SecureActionButtonTemplate")
     sb:SetAllPoints(btn)
     sb:RegisterForClicks("LeftButtonUp")
+    local macroText = NormalizeNewlines(s.macro or DEFAULT_TRANSMOG_MACRO)
     sb:SetAttribute("type", "macro")
-    sb:SetAttribute("macrotext", s.macro or DEFAULT_TRANSMOG_MACRO)
+    sb:SetAttribute("type1", "macro")
+    sb:SetAttribute("macrotext", macroText)
+    sb:SetAttribute("macrotext1", macroText)
     -- Tooltip passthrough
     sb:SetScript("OnEnter", function()
         if btn:GetScript("OnEnter") then btn:GetScript("OnEnter")(btn) end
@@ -81,7 +166,18 @@ local function Transmog_EnsureSecureButton()
     btn._hakSecureAttached = true
     addon.Transmog_UpdateSecureButton = function()
         local s2 = GetSettings()
-        if sb then sb:SetAttribute("macrotext", s2.macro or DEFAULT_TRANSMOG_MACRO) end
+        local cur = _G["HAK_TransmogSecureButton"]
+        if s2.useMacro then
+            if not cur then Transmog_EnsureSecureButton(); cur = _G["HAK_TransmogSecureButton"] end
+            if cur then
+                local mt = NormalizeNewlines(s2.macro or DEFAULT_TRANSMOG_MACRO)
+                cur:SetAttribute("macrotext", mt)
+                cur:SetAttribute("macrotext1", mt)
+                cur:Show(); cur:EnableMouse(true)
+            end
+        else
+            if cur then cur:Hide(); cur:EnableMouse(false) end
+        end
     end
 end
 
@@ -108,7 +204,7 @@ if addon.RegisterModuleOptions then
         infoText:SetPoint("TOPLEFT", macroSection, "TOPLEFT", 0, 0)
         infoText:SetWidth(400)
         infoText:SetJustifyH("LEFT")
-        infoText:SetText("Edit the macro executed on left-click. Only /run or /script lines are executed. Apply to save.")
+        infoText:SetText("Default left-click uses an internal collector (recommended). Optionally enable macro mode below if you need custom behavior. Only /run or /script lines are executed. Apply to save.")
         local scroll = CreateFrame("ScrollFrame", "HAK_TransmogMacroScroll", macroSection, "UIPanelScrollFrameTemplate")
         scroll:SetPoint("TOPLEFT", infoText, "BOTTOMLEFT", -4, -8)
         scroll:SetSize(400, 160)
@@ -143,7 +239,7 @@ if addon.RegisterModuleOptions then
         applyBtn:SetText("Apply")
         applyBtn:SetScript("OnClick", function()
             local s2 = GetSettings()
-            s2.macro = edit:GetText() or ''
+            s2.macro = NormalizeNewlines(edit:GetText() or '')
             if addon.Print then addon.Print("Transmog macro updated.") end
             if addon.Transmog_UpdateSecureButton then addon.Transmog_UpdateSecureButton() end
         end)
@@ -156,9 +252,26 @@ if addon.RegisterModuleOptions then
             if addon.Print then addon.Print("Transmog macro reset to default.") end
             if addon.Transmog_UpdateSecureButton then addon.Transmog_UpdateSecureButton() end
         end)
+        local runBtn = CreateFrame("Button", nil, macroSection, "UIPanelButtonTemplate")
+        runBtn:SetSize(90,22)
+        runBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
+        runBtn:SetText("Run Macro Now")
+        runBtn:SetScript("OnClick", function()
+            ExecuteMacro()
+        end)
+        local modeSection = addon:CreateSection(panel, "Execution Mode", -12)
+        local cb = CreateFrame("CheckButton", "HAK_Transmog_UseMacroCB", modeSection, "InterfaceOptionsCheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", modeSection, "TOPLEFT", 0, 0)
+        _G[cb:GetName() .. "Text"]:SetText("Use macro on left-click (advanced, may cause taint)")
+        cb:SetChecked(GetSettings().useMacro)
+        cb:SetScript("OnClick", function(self)
+            local s3 = GetSettings(); s3.useMacro = self:GetChecked() and true or false
+            if addon.Transmog_UpdateSecureButton then addon.Transmog_UpdateSecureButton() end
+        end)
         -- Refresh macro text when panel shown
         panel:SetScript("OnShow", function()
             local st = GetSettings(); if not st.macro or st.macro == '' then st.macro = DEFAULT_TRANSMOG_MACRO end; edit:SetText(st.macro)
+            if cb then cb:SetChecked(st.useMacro and true or false) end
         end)
         local debugSection = addon:CreateSection(panel, "Debug", -12)
         local dcb = CreateFrame("CheckButton", "HAK_Transmog_DebugCB", debugSection, "InterfaceOptionsCheckButtonTemplate")

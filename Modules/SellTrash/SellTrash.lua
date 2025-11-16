@@ -52,7 +52,7 @@ local function CountItemInBags(itemID)
     return total
 end
 
-local function SellGreyItems()
+local function SellGreyItems(silent)
     local soldCount = 0
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
@@ -64,13 +64,14 @@ local function SellGreyItems()
             end
         end
     end
-    if soldCount > 0 then if addon.Notify then addon:Notify("Sold " .. soldCount .. " trash items.", 'success') end end
+    if not silent and soldCount > 0 then if addon.Notify then addon:Notify("Sold " .. soldCount .. " trash items.", 'success') end end
+    return soldCount
 end
 
-local function SellTrackedItems()
+local function SellTrackedItems(silent)
     local s = GetSettings()
     local watch = s.watchItems or {}
-    if #watch == 0 then if addon.Notify then addon:Notify("Tracked list is empty.", 'warn') end return end
+    if #watch == 0 then if not silent and addon.Notify then addon:Notify("Tracked list is empty.", 'warn') end return 0, 0 end
     local soldStacks, soldItems = 0, 0
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
@@ -84,14 +85,15 @@ local function SellTrackedItems()
             end
         end
     end
-    if addon.Notify then
+    if not silent and addon.Notify then
         if soldStacks > 0 then addon:Notify(string.format("Sold %d stacks (%d items) from tracked list.", soldStacks, soldItems), 'success')
         else addon:Notify("No tracked items found in bags.", 'info') end
     end
+    return soldStacks, soldItems
 end
 
 -- UI similar to CacheOpener: item slot + tracked list
-local uiFrame, itemSlot, listScroll, listContent
+local uiFrame, itemSlot, listScroll, listContent, totalText
 
 local function RefreshTrackedList()
     if not listContent then return end
@@ -109,24 +111,33 @@ local function RefreshTrackedList()
         row:SetSize(baseWidth, 26)
         row:SetPoint("TOPLEFT", listContent, "TOPLEFT", 0, -y)
         row:EnableMouse(true)
+        -- Count label (before icon)
+        local countFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        countFS:SetJustifyH("RIGHT")
+        countFS:SetWidth(26)
+        countFS:SetPoint("LEFT", row, "LEFT", 0, 0)
         local icon = row:CreateTexture(nil, "ARTWORK")
         icon:SetSize(20,20)
-        icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+        icon:SetPoint("LEFT", countFS, "RIGHT", 4, 0)
         local name, link, _, _, _, _, _, _, _, tex = GetItemInfo(id)
         if tex then icon:SetTexture(tex) end
         local fs = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         fs:SetPoint("LEFT", icon, "RIGHT", 6, 0)
         fs:SetJustifyH("LEFT")
-        fs:SetWidth(baseWidth - 20 - 6 - 28)
+        -- Reserve width: count(26)+sp(4)+icon(20)+sp(6)+removeBtn(22)+spRight(4)
+        fs:SetWidth(baseWidth - (26+4+20+6+22+4))
         local countInBags = CountItemInBags(id)
         local displayName = name or ("Item "..id)
+        countFS:SetText(tostring(countInBags or 0))
         fs:SetText(displayName)
         if countInBags == 0 then
             fs:SetTextColor(0.6,0.6,0.6)
             icon:SetVertexColor(0.6,0.6,0.6)
+            countFS:SetTextColor(0.6,0.6,0.6)
         else
             fs:SetTextColor(1,1,1)
             icon:SetVertexColor(1,1,1)
+            countFS:SetTextColor(1,1,1)
         end
         local rem = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
         rem:SetSize(22,20)
@@ -136,13 +147,11 @@ local function RefreshTrackedList()
             -- remove id from list
             for i, v in ipairs(s.watchItems) do if v == id then table.remove(s.watchItems, i) break end end
             RefreshTrackedList()
+            UpdateTotalText()
         end)
         row:SetScript("OnEnter", function()
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
             GameTooltip:SetHyperlink("item:"..id)
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine("Item ID: "..id, 0.8,0.8,0.8)
-            GameTooltip:AddLine("In bags: "..countInBags, 0.8,0.8,0.8)
             GameTooltip:Show()
         end)
         row:SetScript("OnLeave", function()
@@ -153,11 +162,95 @@ local function RefreshTrackedList()
     if y < 10 then y = 10 end
     listContent:SetHeight(y)
     if listScroll and listScroll.UpdateScrollChildRect then listScroll:UpdateScrollChildRect() end
+    -- update total value display if present
+    if totalText and uiFrame and uiFrame:IsShown() then
+        -- will be refreshed by UpdateTotalText below
+    end
+end
+
+-- Compute total vendor value (in copper) of tracked items currently in bags
+local function ComputeTrackedTotalCopper()
+    local s = GetSettings()
+    local watch = s.watchItems or {}
+    if #watch == 0 then return 0 end
+    -- Build quick lookup set for tracked IDs
+    local tracked = {}
+    for _, id in ipairs(watch) do tracked[id] = true end
+    local total = 0
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local id = GetItemIDFromLink(link)
+                if id and tracked[id] then
+                    local _, count = GetContainerItemInfo(bag, slot)
+                    local vendor = select(11, GetItemInfo(id)) or 0
+                    if vendor and vendor > 0 then
+                        total = total + vendor * (count or 1)
+                    end
+                end
+            end
+        end
+    end
+    return total
+end
+
+local function FormatCopper(copper)
+    if type(GetCoinTextureString) == 'function' then
+        return GetCoinTextureString(copper)
+    end
+    local g = math.floor(copper / 10000)
+    local s = math.floor((copper % 10000) / 100)
+    local c = copper % 100
+    return string.format("%dg %ds %dc", g, s, c)
+end
+
+-- Compute total vendor value (in copper) of all grey-quality items in bags
+local function ComputeGreysTotalCopper()
+    local total = 0
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local texture, itemCount, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
+            if link and quality == 0 then
+                local id = GetItemIDFromLink(link)
+                local vendor = id and (select(11, GetItemInfo(id)) or 0) or 0
+                if vendor and vendor > 0 then total = total + vendor * (itemCount or 1) end
+            end
+        end
+    end
+    return total
+end
+
+-- Sell both greys and tracked vendor items with a unified notification
+local function SellTrashAndTracked(silent)
+    local soldGreys = SellGreyItems(true) -- invoke silently; unify messaging here
+    local soldTrackedStacks, soldTrackedItems = SellTrackedItems(true)
+    if silent then return soldGreys, soldTrackedStacks, soldTrackedItems end
+    if addon.Notify then
+        if soldGreys > 0 and soldTrackedStacks > 0 then
+            addon:Notify(string.format("Sold %d trash items and %d tracked stacks (%d items).", soldGreys, soldTrackedStacks, soldTrackedItems), 'success')
+        elseif soldGreys > 0 then
+            addon:Notify(string.format("Sold %d trash items.", soldGreys), 'success')
+        elseif soldTrackedStacks > 0 then
+            addon:Notify(string.format("Sold %d tracked stacks (%d items).", soldTrackedStacks, soldTrackedItems), 'success')
+        else
+            addon:Notify("No trash/tracked items to sell.", 'info')
+        end
+    end
+    return soldGreys, soldTrackedStacks, soldTrackedItems
+end
+
+local function UpdateTotalText()
+    if not totalText then return end
+    local total = ComputeTrackedTotalCopper()
+    totalText:SetText("Tracked value in bags: "..FormatCopper(total))
 end
 
 local function EnsureUI()
     if uiFrame then return end
-    uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKSellTrashFrame", 560, 360, 'panel') or CreateFrame("Frame", "HAKSellTrashFrame", UIParent, "BackdropTemplate")
+    uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKSellTrashFrame", 560, 450, 'panel') or CreateFrame("Frame", "HAKSellTrashFrame", UIParent, "BackdropTemplate")
     uiFrame:SetPoint("CENTER")
     uiFrame:EnableMouse(true)
     uiFrame:SetMovable(true)
@@ -166,7 +259,7 @@ local function EnsureUI()
     uiFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     local title = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOP", uiFrame, "TOP", 0, 0)
-    title:SetText("Sell Tracked Items")
+    title:SetText("Trash Sell List")
     local close = CreateFrame("Button", nil, uiFrame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -4, -4)
     close:SetScript("OnClick", function() uiFrame:Hide() end)
@@ -193,6 +286,7 @@ local function EnsureUI()
                 for _, v in ipairs(s.watchItems) do if v == id then exists = true break end end
                 if not exists then table.insert(s.watchItems, id) end
                 RefreshTrackedList()
+                UpdateTotalText()
             end
             ClearCursor()
         end
@@ -202,15 +296,24 @@ local function EnsureUI()
     end)
     local addHelp = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     addHelp:SetPoint("LEFT", itemSlot, "RIGHT", 8, 0)
-    addHelp:SetText("Drag an item here to add\nIt will be sold at vendor via button")
+    addHelp:SetText("Drag vendor items here to add\nThey will sell with trash at vendor")
+    -- Total vendor value label above the list, centered within the left half of the frame
+    local leftHalf = CreateFrame("Frame", nil, uiFrame)
+    leftHalf:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 0, -89) -- moved 25px further down
+    leftHalf:SetPoint("TOPRIGHT", uiFrame, "TOP", 0, -89)
+    leftHalf:SetHeight(1)
+    totalText = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    totalText:SetPoint("TOP", leftHalf, "TOP", 0, 0)
+    totalText:SetText("Tracked value in bags: 0")
     -- List
     listScroll = CreateFrame("ScrollFrame", nil, uiFrame, "UIPanelScrollFrameTemplate")
-    listScroll:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 16, -90)
+    listScroll:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 16, -112)
     listScroll:SetPoint("BOTTOMRIGHT", uiFrame, "BOTTOMRIGHT", -28, 14)
     listContent = CreateFrame("Frame", nil, listScroll)
     listContent:SetSize(500, 10)
     listScroll:SetScrollChild(listContent)
     RefreshTrackedList()
+    UpdateTotalText()
     uiFrame:Hide()
 end
 
@@ -226,26 +329,39 @@ modFrame:SetScript("OnEvent", function(self, event)
     if not addon.IsModuleEnabled or not addon:IsModuleEnabled("SellTrash") then return end
     local s = GetSettings()
     if event == "MERCHANT_SHOW" then
-        -- auto-sell greys remains optional
-        if s.auto then SellGreyItems() end
+        -- Auto-sell both greys and tracked items when enabled
+        if s.auto then SellTrashAndTracked(false) end
         -- ensure merchant button
         if not merchantButton then
             merchantButton = CreateFrame("Button", "HAK_SellTrackedButton", MerchantFrame, "UIPanelButtonTemplate")
             merchantButton:SetSize(120, 22)
-            merchantButton:SetText("Sell Tracked")
+            merchantButton:SetText("Sell Trash")
             merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -50, -44)
             merchantButton:SetScript("OnClick", function()
-                SellTrackedItems()
+                SellTrashAndTracked(false)
+            end)
+            merchantButton:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText("Sell Trash")
+                local greys = ComputeGreysTotalCopper()
+                local tracked = ComputeTrackedTotalCopper()
+                local combined = (greys or 0) + (tracked or 0)
+                GameTooltip:AddLine("Greys:  "..FormatCopper(greys), 1,1,1)
+                GameTooltip:AddLine("Tracked:"..FormatCopper(tracked), 1,1,1)
+                GameTooltip:AddLine("Total:  "..FormatCopper(combined), 1,1,1)
+                GameTooltip:Show()
+            end)
+            merchantButton:SetScript("OnLeave", function()
+                GameTooltip:Hide()
             end)
         end
         merchantButton:Show()
-        -- enable/disable based on list
-        local watch = s.watchItems or {}
-        merchantButton:SetEnabled(#watch > 0)
+        -- Always enabled: sells greys plus tracked list
+        merchantButton:SetEnabled(true)
     elseif event == "MERCHANT_CLOSED" then
         if merchantButton then merchantButton:Hide() end
     elseif event == "BAG_UPDATE" then
-        if uiFrame and uiFrame:IsShown() then RefreshTrackedList() end
+        if uiFrame and uiFrame:IsShown() then RefreshTrackedList(); UpdateTotalText() end
     end
 end)
 
@@ -255,10 +371,10 @@ end
 
 local function OnTooltip(btn)
     local lines = {
-        "Sell Tracked Items",
-        "Click: Open tracked sell list UI.",
-        "At vendor: 'Sell Tracked' button sells only listed items.",
-        "Optional: Auto-sell grey items on open.",
+        "Sell Trash",
+        "Click: Open trash/vendor tracking UI.",
+        "At vendor: sells greys + tracked vendor items.",
+        "Auto-sell: On by default (can be toggled in options).",
     }
     if GetSettings().debug then table.insert(lines, "Debug: Enabled") end
     return lines

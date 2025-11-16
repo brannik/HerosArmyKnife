@@ -20,9 +20,10 @@ A concise reference for each module: purpose, key actions, and settings.
 - Purpose: Placeholder, reserved for future features.
 
 ## SellTrash
-- Purpose: Vendor all grey‑quality items automatically when talking to a merchant.
-- Click: Sells greys immediately (must be at a vendor).
-- Auto: Sells on MERCHANT_SHOW when enabled.
+- Purpose: Sell trash (grey‑quality) items and any user‑tracked vendor items.
+- Click: At a vendor, sells greys plus your tracked vendor items.
+- Auto: On MERCHANT_SHOW, sells greys + tracked when enabled.
+- UI: Drag items into the Trash Sell List to track them for vending; list shows counts and total tracked value.
 - Options: Enable "Debug" for extra messages.
 
 ## CacheOpener
