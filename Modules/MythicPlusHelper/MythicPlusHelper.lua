@@ -382,6 +382,7 @@ local function BuildContextMenu(btn)
     local menu = {
         { text="Mythic+ Helper", isTitle=true, notCheckable=true },
         { text = s.monitoring and "Disable LFM Monitoring" or "Enable LFM Monitoring", func = function() addon:MPlus_ToggleMonitoring() end, notCheckable=true },
+        { text = "Open LFM Monitor", func = function() if addon.MPlus_OpenLFMMonitor then addon:MPlus_OpenLFMMonitor() end end, notCheckable=true },
         { text = "Recruitment", func = function() if addon.MPlus_OpenRecruitment then addon:MPlus_OpenRecruitment() end end, notCheckable=true },
         { text = "Mark Targets", func = MarkTarget, notCheckable=true },
         { text = "Spec ("..(s.spec or "DPS")..")", hasArrow=true, menuList = specSub, notCheckable=true },
@@ -605,6 +606,17 @@ UpdateIconAppearance()
 addon.MythicPlusHelper_ForceRefresh = function()
     ScanForKeystone(); UpdateIconAppearance()
     addon.MPlus_UpdateMonitoringIndicator()
+end
+
+-- External open helper for LFM monitor (manual submenu access)
+function addon:MPlus_OpenLFMMonitor()
+    if addon.MPlusLFMQueue then
+        if addon.MPlusLFMQueue.ManualShow then
+            addon.MPlusLFMQueue:ManualShow()
+        elseif addon.MPlusLFMQueue.Show then
+            addon.MPlusLFMQueue:Show()
+        end
+    end
 end
 
 -- Monitoring state visual indicator (border overlay)

@@ -6,6 +6,7 @@ local q = addon.MPlusLFMQueue
 q.active = false
 q.messages = q.messages or {}
 q.maxMessages = 200
+q.userClosed = q.userClosed or false -- track manual close so we do not auto-pop window if user intentionally hid it
 
 -- Recruit-style pattern filters (adapted from external WeakAura logic)
 q.patterns = q.patterns or {
@@ -60,6 +61,16 @@ local function MessageMatchesAnyRecruitPattern(rawMsg)
             end
         end
     end
+    -- Recruitment token gating: prevent false positives like "anyone running ms gold farm?"
+    -- Only treat msLeveling/msGold patterns as recruitment if a recruiting token/role keyword appears.
+    local function HasRecruitToken(m)
+        -- Core tokens: lfm, lfg, lf (as standalone), need, role keywords
+        return m:find("lfm") or m:find("lfg") or m:find("lf ") or m:find(" need ") or m:find("need%s")
+            or m:find("%f[%a]dps%f[%A]") or m:find("%f[%a]tank%f[%A]") or m:find("%f[%a]heal%f[%A]")
+            or m:find("looking for") or m:find("looking for more")
+    end
+    if matchesMsGold and not HasRecruitToken(msgLower) then matchesMsGold = false end
+    if matchesMsLeveling and not HasRecruitToken(msgLower) then matchesMsLeveling = false end
     return (matchesMsLeveling or matchesMsGold or matchesLfmDps or matchesLfmTank or matchesLfmHeal)
 end
 
@@ -91,6 +102,8 @@ function q:EvaluateActivation()
     local shouldBeActive = monitoringDesired and not q.suspended
     if shouldBeActive then
         EnsureWindow()
+        -- Reset manual close flag when (re)activating monitoring
+        if not q.active then q.userClosed = false end
         q.frame:Show()
     else
         if q.frame then q.frame:Hide() end
@@ -149,6 +162,7 @@ function EnsureWindow()
         q.entries = {}
         q:RefreshList()
         f:Hide()
+        q.userClosed = true -- user intentionally closed; suppress auto re-open on new messages
     end)
     -- Scroll container
     local scrollFrame = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
@@ -325,11 +339,20 @@ eventFrame:SetScript("OnEvent", function(_, event, msg, sender, languageName, ch
     -- prune oldest beyond maxMessages
     if #q.entries > q.maxMessages then table.remove(q.entries, 1) end
     q:RefreshList()
+    -- Auto-show if monitoring active and window hidden (unless user manually closed it)
+    if q.frame and not q.userClosed and not q.frame:IsShown() then
+        q.frame:Show()
+    end
 end)
 
 -- Expose manual show (optional)
 function q:Show()
-    EnsureWindow(); q.frame:Show(); q:RefreshList()
+    EnsureWindow(); q.userClosed = false; q.frame:Show(); q:RefreshList()
+end
+
+-- Manual show helper (distinct naming for external calls)
+function q:ManualShow()
+    q:Show()
 end
 
 -- State change monitoring for combat/group transitions
