@@ -15,6 +15,7 @@ end
 local modFrame = CreateFrame("Frame")
 modFrame:RegisterEvent("MERCHANT_SHOW")
 modFrame:RegisterEvent("MERCHANT_CLOSED")
+modFrame:RegisterEvent("BAG_UPDATE")
 
 -- Helpers
 local function GetItemIDFromLink(link)
@@ -29,6 +30,26 @@ local function IsTracked(itemID)
     local list = s.watchItems or {}
     for _, id in ipairs(list) do if id == itemID then return true end end
     return false
+end
+
+-- Count total items in bags for a given itemID
+local function CountItemInBags(itemID)
+    if not itemID then return 0 end
+    local total = 0
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local id = GetItemIDFromLink(link)
+                if id == itemID then
+                    local _, itemCount = GetContainerItemInfo(bag, slot)
+                    total = total + (itemCount or 1)
+                end
+            end
+        end
+    end
+    return total
 end
 
 local function SellGreyItems()
@@ -81,20 +102,32 @@ local function RefreshTrackedList()
     local s = GetSettings()
     local watch = s.watchItems or {}
     local y = 0
+    local baseWidth = (listScroll and listScroll:GetWidth() or 460)
     for _, id in ipairs(watch) do
         local row = CreateFrame("Frame", nil, listContent)
         row._hakTrackedRow = true
-        row:SetSize(300, 26)
+        row:SetSize(baseWidth, 26)
         row:SetPoint("TOPLEFT", listContent, "TOPLEFT", 0, -y)
+        row:EnableMouse(true)
         local icon = row:CreateTexture(nil, "ARTWORK")
         icon:SetSize(20,20)
         icon:SetPoint("LEFT", row, "LEFT", 0, 0)
-        local name = GetItemInfo(id)
-        local tex = select(10, GetItemInfo(id))
+        local name, link, _, _, _, _, _, _, _, tex = GetItemInfo(id)
         if tex then icon:SetTexture(tex) end
         local fs = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         fs:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        fs:SetText(name or ("Item "..id))
+        fs:SetJustifyH("LEFT")
+        fs:SetWidth(baseWidth - 20 - 6 - 28)
+        local countInBags = CountItemInBags(id)
+        local displayName = name or ("Item "..id)
+        fs:SetText(displayName)
+        if countInBags == 0 then
+            fs:SetTextColor(0.6,0.6,0.6)
+            icon:SetVertexColor(0.6,0.6,0.6)
+        else
+            fs:SetTextColor(1,1,1)
+            icon:SetVertexColor(1,1,1)
+        end
         local rem = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
         rem:SetSize(22,20)
         rem:SetText("X")
@@ -103,6 +136,17 @@ local function RefreshTrackedList()
             -- remove id from list
             for i, v in ipairs(s.watchItems) do if v == id then table.remove(s.watchItems, i) break end end
             RefreshTrackedList()
+        end)
+        row:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink("item:"..id)
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Item ID: "..id, 0.8,0.8,0.8)
+            GameTooltip:AddLine("In bags: "..countInBags, 0.8,0.8,0.8)
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function()
+            GameTooltip:Hide()
         end)
         y = y + 28
     end
@@ -113,7 +157,7 @@ end
 
 local function EnsureUI()
     if uiFrame then return end
-    uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKSellTrashFrame", 420, 300, 'panel') or CreateFrame("Frame", "HAKSellTrashFrame", UIParent, "BackdropTemplate")
+    uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKSellTrashFrame", 560, 360, 'panel') or CreateFrame("Frame", "HAKSellTrashFrame", UIParent, "BackdropTemplate")
     uiFrame:SetPoint("CENTER")
     uiFrame:EnableMouse(true)
     uiFrame:SetMovable(true)
@@ -132,14 +176,17 @@ local function EnsureUI()
     itemSlot:SetSize(40, 40)
     itemSlot:RegisterForDrag("LeftButton")
     itemSlot:SetScript("OnReceiveDrag", function()
-        local kind, d1, d2 = GetCursorInfo()
+        local kind, p1, p2 = GetCursorInfo()
         if kind == "item" then
+            local id
             local link
-            -- Wrath returns bag, slot for kind=="item"
-            if d1 and d2 then
-                link = GetContainerItemLink(d1, d2)
+            if type(p2) == "string" and p2:find("|Hitem:") then
+                link = p2
+                id = GetItemIDFromLink(link)
             end
-            local id = GetItemIDFromLink(link)
+            if not id and type(p1) == "number" then
+                id = p1
+            end
             if id then
                 local s = GetSettings(); s.watchItems = s.watchItems or {}
                 local exists = false
@@ -161,7 +208,7 @@ local function EnsureUI()
     listScroll:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 16, -90)
     listScroll:SetPoint("BOTTOMRIGHT", uiFrame, "BOTTOMRIGHT", -28, 14)
     listContent = CreateFrame("Frame", nil, listScroll)
-    listContent:SetSize(300, 10)
+    listContent:SetSize(500, 10)
     listScroll:SetScrollChild(listContent)
     RefreshTrackedList()
     uiFrame:Hide()
@@ -197,6 +244,8 @@ modFrame:SetScript("OnEvent", function(self, event)
         merchantButton:SetEnabled(#watch > 0)
     elseif event == "MERCHANT_CLOSED" then
         if merchantButton then merchantButton:Hide() end
+    elseif event == "BAG_UPDATE" then
+        if uiFrame and uiFrame:IsShown() then RefreshTrackedList() end
     end
 end)
 
