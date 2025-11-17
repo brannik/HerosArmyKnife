@@ -5,7 +5,7 @@ local keystoneInfo = { id = nil, name = nil, link = nil, texture = nil }
 local KEY_FALLBACK_ICON = "Interface\\Icons\\INV_Misc_Key_03"
 
 addon:RegisterInit(function()
-    local s = addon.GetModuleSettings and addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS", recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false }) or (HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or {})
+    local s = addon.GetModuleSettings and addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS", recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false, shareEnabled = true, shareNotify = false }) or (HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or {})
     if s.monitoring == nil then s.monitoring = false end
     if s.debug == nil then s.debug = false end
     if not s.glow then s.glow = { r=1, g=0.85, b=0, a=0.9, pulse=false } end
@@ -15,6 +15,8 @@ addon:RegisterInit(function()
     if s.recruitNeedTank == nil then s.recruitNeedTank = false end
     if s.recruitNeedHealer == nil then s.recruitNeedHealer = false end
     if s.recruitNeedDPS == nil then s.recruitNeedDPS = false end
+    if s.shareEnabled == nil then s.shareEnabled = true end
+    if s.shareNotify == nil then s.shareNotify = false end
     addon.MPlusSpec = s.spec
     -- Auto-apply saved monitoring state silently on init
     if s.monitoring then
@@ -23,8 +25,43 @@ addon:RegisterInit(function()
 end)
 
 local function GetSettings()
-    if addon.GetModuleSettings then return addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS", recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false }) end
-    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or { monitoring = false }
+    if addon.GetModuleSettings then return addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, debug = false, glow = { r=1, g=0.85, b=0, a=0.9, pulse=false }, spec = "DPS", recruitInterval = 60, recruitChannel = 1, recruitNeedTank = false, recruitNeedHealer = false, recruitNeedDPS = false, shareEnabled = true, shareNotify = false }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or { monitoring = false, shareEnabled = true, shareNotify = false }
+end
+
+function addon:MPlus_GetSettings()
+    return GetSettings()
+end
+
+function addon:MPlus_IsShareEnabled()
+    local s = GetSettings()
+    return s.shareEnabled ~= false
+end
+
+function addon:MPlus_SetShareEnabled(state, silent)
+    local s = GetSettings()
+    local newVal = state and true or false
+    if s.shareEnabled == newVal then return end
+    s.shareEnabled = newVal
+    if addon.Notify and not silent then
+        addon:Notify("Party info sharing "..(newVal and "ON" or "OFF"), newVal and 'success' or 'info', addon:GetCurrentKeystoneIcon())
+    end
+    if newVal then
+        addon:MPlus_BroadcastFull()
+    end
+    if addon._MPlusPartyWindow and addon._MPlusPartyWindow.Refresh then
+        addon._MPlusPartyWindow:Refresh()
+    end
+end
+
+function addon:MPlus_ShouldNotifySharing()
+    local s = GetSettings()
+    return s.shareNotify and true or false
+end
+
+function addon:MPlus_SetShareNotify(state)
+    local s = GetSettings()
+    s.shareNotify = state and true or false
 end
 
 -- Scan bags for an item whose name contains "Keystone"
@@ -304,6 +341,9 @@ function addon:MPlus_SetSpec(role)
         s.spec = up
         addon.MPlusSpec = up
         if addon.Notify then addon:Notify("Role set to "..up, 'info', addon:GetCurrentKeystoneIcon()) end
+        if addon:MPlus_IsShareEnabled() and addon.MPlus_BroadcastFull then
+            addon:MPlus_BroadcastFull()
+        end
     end
 end
 
@@ -408,32 +448,106 @@ end
 -- Small party info window listing all current members; shows spec & ilvl if shared via addon
 function addon:MPlus_OpenPartyInfoWindow()
     if not addon._MPlusPartyWindow then
-        local w = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAK_MPlusPartyInfo", 260, 180, 'panel') or CreateFrame("Frame", "HAK_MPlusPartyInfo", UIParent, "BackdropTemplate")
+        local w = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAK_MPlusPartyInfo", 420, 260, 'panel') or CreateFrame("Frame", "HAK_MPlusPartyInfo", UIParent, "BackdropTemplate")
         w:SetPoint("CENTER", UIParent, "CENTER", 60, 40)
-        w:EnableMouse(true)
-        w:SetMovable(true)
-        local title = w:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-        title:SetPoint("TOP", w, "TOP", 0, 0)
-        title:SetText("Party Info")
-        local drag = CreateFrame("Frame", nil, w)
-        drag:SetPoint("TOPLEFT", w, "TOPLEFT", 0, 0)
-        drag:SetPoint("TOPRIGHT", w, "TOPRIGHT", -34, 0)
-        drag:SetHeight(34)
-        drag:EnableMouse(true)
-        drag:RegisterForDrag("LeftButton")
-        drag:SetScript("OnDragStart", function() w:StartMoving() end)
-        drag:SetScript("OnDragStop", function() w:StopMovingOrSizing() end)
-        local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
-        close:SetPoint("TOPRIGHT", w, "TOPRIGHT", -4, -4)
-        close:SetFrameLevel(w:GetFrameLevel()+10)
-        close:SetScript("OnClick", function() w:Hide() end)
-        w.scroll = CreateFrame("ScrollFrame", nil, w, "UIPanelScrollFrameTemplate")
-        w.scroll:SetPoint("TOPLEFT", w, "TOPLEFT", 12, -40)
-        w.scroll:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -30, 12)
+        if not w:GetWidth() or w:GetWidth() <= 0 then w:SetSize(420, 260) end
+        local container
+        if addon.ApplyStandardPanelChrome then
+            container = addon:ApplyStandardPanelChrome(w, "Party Info", { bodyPadding = { left = 18, right = 20, top = 74, bottom = 22 }, dragBody = true })
+        end
+        if not container then
+            w:EnableMouse(true)
+            w:SetMovable(true)
+            w:SetClampedToScreen(true)
+            w:RegisterForDrag("LeftButton")
+            w:SetScript("OnDragStart", function(self) self:StartMoving() end)
+            w:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+            w:SetSize(420, 260)
+            local title = w:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+            title:SetPoint("TOP", w, "TOP", 0, -6)
+            title:SetText("Party Info")
+            local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
+            close:SetPoint("TOPRIGHT", w, "TOPRIGHT", -6, -6)
+            close:SetScript("OnClick", function() w:Hide() end)
+            container = CreateFrame("Frame", nil, w)
+            container:SetPoint("TOPLEFT", w, "TOPLEFT", 18, -74)
+            container:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -20, 22)
+        end
+        container = container or w
+        local rightInset = 16
+
+        w.header = CreateFrame("Frame", nil, container)
+        w.header:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        w.header:SetPoint("TOPRIGHT", container, "TOPRIGHT", -rightInset, 0)
+        w.header:SetHeight(18)
+        local headerName = w.header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        headerName:SetPoint("LEFT", w.header, "LEFT", 6, 0)
+        headerName:SetText("Name")
+        local headerSpec = w.header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        headerSpec:SetPoint("LEFT", w.header, "LEFT", 172, 0)
+        headerSpec:SetText("Spec")
+        local headerIlvl = w.header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        headerIlvl:SetPoint("LEFT", headerSpec, "RIGHT", 20, 0)
+        headerIlvl:SetText("ilvl")
+        local headerUpdated = w.header:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        headerUpdated:SetPoint("RIGHT", w.header, "RIGHT", -6, 0)
+        headerUpdated:SetText("Updated")
+        local headerLine = container:CreateTexture(nil, "ARTWORK")
+        headerLine:SetColorTexture(1, 1, 1, 0.08)
+        headerLine:SetPoint("TOPLEFT", w.header, "BOTTOMLEFT", 0, -4)
+        headerLine:SetPoint("TOPRIGHT", w.header, "BOTTOMRIGHT", 0, -4)
+        headerLine:SetHeight(1)
+
+        local footer = CreateFrame("Frame", nil, container)
+        footer:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0)
+        footer:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -rightInset, 0)
+        footer:SetHeight(64)
+
+        w.missingHint = footer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        w.missingHint:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, -6)
+        w.missingHint:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, -6)
+        w.missingHint:SetJustifyH("LEFT")
+        w.missingHint:SetText("|cffB5B5B5Party members without the addon appear as \"No data\".|r")
+        w.missingHint:Hide()
+
+        w.refreshBtn = CreateFrame("Button", nil, footer, "UIPanelButtonTemplate")
+        w.refreshBtn:SetSize(120, 22)
+        w.refreshBtn:SetPoint("BOTTOMRIGHT", footer, "BOTTOMRIGHT", 0, 0)
+        w.refreshBtn:SetText("Request Update")
+        w.refreshBtn:SetScript("OnClick", function()
+            if addon:MPlus_IsShareEnabled() and addon.MPlus_BroadcastFull then
+                addon:MPlus_BroadcastFull()
+                if addon.Notify then addon:Notify("Requested party data refresh.", 'info', addon:GetCurrentKeystoneIcon()) end
+            end
+        end)
+        if addon.StyleButton then addon:StyleButton(w.refreshBtn) end
+
+        w.statusText = footer:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        w.statusText:SetPoint("BOTTOMLEFT", footer, "BOTTOMLEFT", 0, 6)
+        w.statusText:SetPoint("RIGHT", w.refreshBtn, "LEFT", -12, 0)
+        w.statusText:SetJustifyH("LEFT")
+
+        w.scroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
+        w.scroll:SetPoint("TOPLEFT", w.header, "BOTTOMLEFT", 0, -10)
+        w.scroll:SetPoint("BOTTOMLEFT", footer, "TOPLEFT", 0, -12)
+        w.scroll:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", 0, -12)
         local content = CreateFrame("Frame", nil, w.scroll)
-        content:SetSize(200, 10)
+        content:SetSize(240, 10)
         w.scroll:SetScrollChild(content)
         w.content = content
+        w.rows = {}
+        w.emptyText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        w.emptyText:SetPoint("TOP", content, "TOP", 0, -20)
+        w.emptyText:SetWidth(280)
+        w.emptyText:SetJustifyH("CENTER")
+        w.emptyText:Hide()
+
+        w.scroll:SetScript("OnSizeChanged", function(_, width)
+            if width and width > 0 then
+                w.content:SetWidth(width)
+            end
+        end)
+
         local function GetRoster()
             local names = {}
             if GetNumRaidMembers and GetNumRaidMembers() > 0 then
@@ -455,36 +569,208 @@ function addon:MPlus_OpenPartyInfoWindow()
             end
             return names
         end
+
         local specColorMap = { TANK = "|cff4D94FF", HEALER = "|cff33FF99", DPS = "|cffFF6A00" }
-        function w:Refresh()
-            for _, c in ipairs({ w.content:GetChildren() }) do c:Hide(); c:SetParent(nil) end
-            local roster = GetRoster()
-            local y = 0
-            for _, name in ipairs(roster) do
-                local row = CreateFrame("Frame", nil, w.content)
-                row:SetPoint("TOPLEFT", w.content, "TOPLEFT", 0, -y)
-                row:SetSize(200, 18)
-                local fs = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-                fs:SetPoint("LEFT", row, "LEFT", 4, 0)
-                local pdata = addon.MPlusPartyInfo and addon.MPlusPartyInfo[name]
-                if pdata then
-                    local col = specColorMap[pdata.spec] or "|cffFFFFFF"
-                    local ilvl = pdata.ilvl or "?"
-                    fs:SetText(col .. name .. "|r - " .. pdata.spec .. " ilvl:" .. ilvl)
-                else
-                    fs:SetText(name)
-                end
-                y = y + 20
-            end
-            if y < 10 then y = 10 end
-            w.content:SetHeight(y)
+        local specLabelMap = { TANK = "Tank", HEALER = "Healer", DPS = "DPS" }
+
+        local function SpecText(spec)
+            if not spec then return "|cffB5B5B5Unknown|r" end
+            local up = spec:upper()
+            local color = specColorMap[up] or "|cffB5B5B5"
+            local label = specLabelMap[up] or (spec:gsub("^%l", string.upper))
+            return color .. label .. "|r"
         end
+
+        local function ColorIlvl(ilvl)
+            if not ilvl or ilvl <= 0 then return "|cffB5B5B5--|r" end
+            local color
+            if ilvl >= 260 then color = "|cff00FFDC"
+            elseif ilvl >= 240 then color = "|cff00D1FF"
+            elseif ilvl >= 220 then color = "|cff3399FF"
+            elseif ilvl >= 200 then color = "|cff9966FF"
+            elseif ilvl >= 180 then color = "|cff66CC33"
+            else color = "|cffB5B5B5" end
+            return color .. ilvl .. "|r"
+        end
+
+        local function FormatAgo(ts, hasData, pending)
+            if pending then return "|cffFFD200Pending broadcast...|r" end
+            if not hasData or not ts then return "|cffFF5555No data|r" end
+            local diff = math.max(0, time() - ts)
+            local color
+            if diff <= 30 then color = "|cff66FF66"
+            elseif diff <= 90 then color = "|cffFFD200"
+            else color = "|cffFF5555" end
+            local label
+            if diff < 1 then
+                label = "Just now"
+            else
+                if SecondsToTimeAbbrev then
+                    label = SecondsToTimeAbbrev(diff)
+                else
+                    if diff >= 3600 then label = string.format("%dh", math.floor(diff/3600))
+                    elseif diff >= 60 then label = string.format("%dm", math.floor(diff/60))
+                    else label = string.format("%ds", diff) end
+                end
+                label = (label or "0s") .. " ago"
+            end
+            return color .. label .. "|r"
+        end
+
+        local function SetButtonEnabled(btn, enabled)
+            if not btn then return end
+            if btn.SetEnabled then btn:SetEnabled(enabled) end
+            if enabled then btn:Enable() else btn:Disable() end
+        end
+
+        function w:AcquireRow(index)
+            local row = self.rows[index]
+            if not row then
+                row = CreateFrame("Frame", nil, self.content)
+                row:SetHeight(20)
+                row.alt = row:CreateTexture(nil, "BACKGROUND")
+                row.alt:SetAllPoints()
+                row.alt:SetColorTexture(1, 1, 1, 0.04)
+                row.selfHighlight = row:CreateTexture(nil, "BACKGROUND")
+                row.selfHighlight:SetAllPoints()
+                row.selfHighlight:SetColorTexture(0.2, 0.6, 1, 0.08)
+                row.selfHighlight:Hide()
+                row.name = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+                row.name:SetPoint("LEFT", row, "LEFT", 6, 0)
+                row.name:SetWidth(150)
+                row.name:SetJustifyH("LEFT")
+                row.spec = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+                row.spec:SetPoint("LEFT", row, "LEFT", 172, 0)
+                row.spec:SetWidth(130)
+                row.spec:SetJustifyH("LEFT")
+                row.ilvl = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+                row.ilvl:SetPoint("LEFT", row.spec, "RIGHT", 20, 0)
+                row.ilvl:SetWidth(52)
+                row.ilvl:SetJustifyH("RIGHT")
+                row.updated = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+                row.updated:SetPoint("LEFT", row.ilvl, "RIGHT", 16, 0)
+                row.updated:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+                row.updated:SetJustifyH("RIGHT")
+                self.rows[index] = row
+            end
+            return row
+        end
+
+        function w:UpdateStatusLine()
+            local shareEnabled = addon:MPlus_IsShareEnabled()
+            if not self._hasGroup then
+                self.statusText:SetText("|cffB5B5B5Not in a party.|r")
+            else
+                if not shareEnabled then
+                    self.statusText:SetText("|cffFF5555Sharing disabled|r – enable in options to broadcast your role.")
+                else
+                    local playerName = UnitName("player") or ""
+                    local info = addon.MPlusPartyInfo and addon.MPlusPartyInfo[playerName]
+                    if info and info.last then
+                        self.statusText:SetText("|cff66FF66Sharing active|r – broadcasting latest spec & ilvl.")
+                    else
+                        self.statusText:SetText("|cffFFD200Sharing enabled – awaiting replies from party.")
+                    end
+                end
+            end
+            SetButtonEnabled(self.refreshBtn, shareEnabled)
+            if self.missingHint then
+                self.missingHint:SetShown(self._missingOthers and self._hasGroup)
+            end
+        end
+
+        function w:Refresh()
+            for _, row in ipairs(self.rows) do row:Hide() end
+            local roster = GetRoster()
+            local rosterCount = #roster
+            local entries = {}
+            local playerName = UnitName("player")
+            local s = GetSettings()
+            for _, name in ipairs(roster) do
+                local isSelf = (playerName and name == playerName)
+                local data = addon.MPlusPartyInfo and addon.MPlusPartyInfo[name]
+                local spec = data and data.spec or (isSelf and (s.spec or addon.MPlusSpec)) or nil
+                local ilvl = data and data.ilvl or (isSelf and addon:GetPlayerItemLevel()) or nil
+                local hasData = data ~= nil
+                local pending = false
+                if isSelf and addon:MPlus_IsShareEnabled() and rosterCount > 1 and not hasData then
+                    pending = true
+                end
+                entries[#entries+1] = {
+                    name = name,
+                    spec = spec,
+                    ilvl = ilvl,
+                    last = data and data.last or nil,
+                    isSelf = isSelf,
+                    hasData = hasData,
+                    pending = pending,
+                }
+            end
+            table.sort(entries, function(a, b)
+                local order = { TANK = 1, HEALER = 2, DPS = 3 }
+                local aSpec = a.spec and a.spec:upper() or ""
+                local bSpec = b.spec and b.spec:upper() or ""
+                local ao = order[aSpec] or 4
+                local bo = order[bSpec] or 4
+                if ao == bo then
+                    if a.isSelf ~= b.isSelf then return a.isSelf end
+                    return a.name < b.name
+                end
+                return ao < bo
+            end)
+
+            if rosterCount <= 1 then entries = {} end
+
+            local y = 0
+            for idx, entry in ipairs(entries) do
+                local row = self:AcquireRow(idx)
+                row:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
+                row:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -y)
+                row.alt:SetShown(idx % 2 == 0)
+                row.selfHighlight:SetShown(entry.isSelf)
+                row.name:SetText(entry.name)
+                row.spec:SetText(SpecText(entry.spec))
+                row.ilvl:SetText(ColorIlvl(entry.ilvl))
+                row.updated:SetText(FormatAgo(entry.last, entry.hasData, entry.pending))
+                row:Show()
+                y = y + row:GetHeight()
+            end
+
+            if y < 10 then y = 10 end
+            self.content:SetHeight(y)
+            if self.scroll and self.scroll.UpdateScrollChildRect then self.scroll:UpdateScrollChildRect() end
+
+            if #entries == 0 then
+                if rosterCount <= 1 then
+                    self.emptyText:SetText("Join a party to exchange data.")
+                else
+                    self.emptyText:SetText("Waiting for party members to broadcast...")
+                end
+                self.emptyText:Show()
+            else
+                self.emptyText:Hide()
+            end
+
+            local missingOthers = false
+            for _, entry in ipairs(entries) do
+                if not entry.hasData and not entry.pending and not entry.isSelf then
+                    missingOthers = true
+                    break
+                end
+            end
+            self._missingOthers = missingOthers
+            self._hasGroup = rosterCount > 1
+            self:UpdateStatusLine()
+        end
+
         local ev = CreateFrame("Frame")
         ev:RegisterEvent("PARTY_MEMBERS_CHANGED")
         ev:RegisterEvent("RAID_ROSTER_UPDATE")
         ev:SetScript("OnEvent", function()
             if w:IsShown() then w:Refresh() end
         end)
+
+        w:SetScript("OnShow", function(self) self:Refresh() end)
         addon._MPlusPartyWindow = w
     end
     addon._MPlusPartyWindow:Show()
@@ -553,6 +839,15 @@ local function OnTooltip(btn)
             stateLine = "|cffB5B5B5Monitoring: OFF|r" -- grey for disabled
         end
         table.insert(lines, stateLine)
+    end
+    do
+        local shareLine
+        if addon:MPlus_IsShareEnabled() then
+            shareLine = "|cff33FF33Sharing: ON|r"
+        else
+            shareLine = "|cffFF5555Sharing: OFF|r"
+        end
+        table.insert(lines, shareLine)
     end
     -- Separator block
     table.insert(lines, " ")
@@ -673,7 +968,31 @@ end)
 
 if addon.RegisterModuleOptions then
     addon:RegisterModuleOptions("MythicPlusHelper", function(panel)
-        local debugSection = addon:CreateSection(panel, "Debug", -8, 580)
+        local shareSection = addon:CreateSection(panel, "Party Data Sharing", -8, 580)
+        shareSection:SetWidth(580)
+        local shareCB = CreateFrame("CheckButton", "HAK_MPlus_ShareCB", shareSection, "InterfaceOptionsCheckButtonTemplate")
+        shareCB:SetPoint("TOPLEFT", shareSection, "TOPLEFT", 0, 0)
+        _G[shareCB:GetName() .. "Text"]:SetText("Share spec & item level with party")
+        shareCB:SetChecked(addon:MPlus_IsShareEnabled())
+        shareCB:SetScript("OnClick", function(self)
+            addon:MPlus_SetShareEnabled(self:GetChecked())
+        end)
+
+        local shareNotifyCB = CreateFrame("CheckButton", "HAK_MPlus_ShareNotifyCB", shareSection, "InterfaceOptionsCheckButtonTemplate")
+        shareNotifyCB:SetPoint("TOPLEFT", shareCB, "BOTTOMLEFT", 0, -12)
+        _G[shareNotifyCB:GetName() .. "Text"]:SetText("Show toast when party data received")
+        shareNotifyCB:SetChecked(addon:MPlus_ShouldNotifySharing())
+        shareNotifyCB:SetScript("OnClick", function(self)
+            addon:MPlus_SetShareNotify(self:GetChecked())
+        end)
+
+        local hint = shareSection:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        hint:SetPoint("TOPLEFT", shareNotifyCB, "BOTTOMLEFT", 4, -8)
+        hint:SetWidth(420)
+        hint:SetJustifyH("LEFT")
+        hint:SetText("Sharing uses the HAKMP addon channel. Disable to stay silent or in guild runs that forbid external messages.")
+
+        local debugSection = addon:CreateSection(panel, "Debug", -24, 580)
         local dcb = CreateFrame("CheckButton", "HAK_MPlus_DebugCB", debugSection, "InterfaceOptionsCheckButtonTemplate")
         dcb:SetPoint("TOPLEFT", debugSection, "TOPLEFT", 0, 0)
         _G[dcb:GetName() .. "Text"]:SetText("Enable debug info")
@@ -701,6 +1020,8 @@ if addon.RegisterModuleOptions then
         local function RefreshControls()
             local s = GetSettings()
             pulseCB:SetChecked(s.glow.pulse)
+            shareCB:SetChecked(addon:MPlus_IsShareEnabled())
+            shareNotifyCB:SetChecked(addon:MPlus_ShouldNotifySharing())
         end
         pulseCB:SetScript("OnClick", function(self)
             local s = GetSettings(); s.glow.pulse = self:GetChecked() and true or false; UpdateIconAppearance()

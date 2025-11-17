@@ -121,23 +121,46 @@ local function CreateUI()
     if uiFrame then return end
     uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKCacheOpenerFrame", 380, 260, 'panel') or CreateFrame("Frame", "HAKCacheOpenerFrame", UIParent, "BackdropTemplate")
     uiFrame:SetPoint("CENTER")
-    uiFrame:EnableMouse(true)
-    uiFrame:SetMovable(true)
-    uiFrame:RegisterForDrag("LeftButton")
-    uiFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    uiFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    local title = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    -- Move title upward (closer to top) so it sits properly in header region
-    title:SetPoint("TOP", uiFrame, "TOP", 0, 0)
-    title:SetText("Cache Opener")
-    -- Item slot (centered below title)
-    itemSlot = CreateFrame("Button", "HAK_CacheOpener_ItemSlot", uiFrame, "ItemButtonTemplate")
-    itemSlot:SetPoint("TOP", title, "BOTTOM", 0, -14)
+    local container
+    if addon.ApplyStandardPanelChrome then
+        container = addon:ApplyStandardPanelChrome(uiFrame, "Cache Opener", { bodyPadding = { left = 20, right = 22, top = 74, bottom = 18 }, dragBody = true })
+    end
+    if not container then
+        uiFrame:EnableMouse(true)
+        uiFrame:SetMovable(true)
+        uiFrame:SetClampedToScreen(true)
+        uiFrame:RegisterForDrag("LeftButton")
+        uiFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        uiFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        if not uiFrame.titleText then
+            local title = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+            title:SetPoint("TOP", uiFrame, "TOP", 0, -6)
+            title:SetText("Cache Opener")
+            uiFrame.titleText = title
+        end
+        if not uiFrame.closeButton then
+            local close = CreateFrame("Button", nil, uiFrame, "UIPanelCloseButton")
+            close:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -6, -6)
+            close:SetScript("OnClick", function() uiFrame:Hide() end)
+            uiFrame.closeButton = close
+        end
+        container = CreateFrame("Frame", nil, uiFrame)
+        container:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 20, -72)
+        container:SetPoint("BOTTOMRIGHT", uiFrame, "BOTTOMRIGHT", -22, 18)
+    end
+    container = container or uiFrame
+    itemSlot = CreateFrame("Button", "HAK_CacheOpener_ItemSlot", container, "ItemButtonTemplate")
+    itemSlot:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
     itemSlot:SetSize(40,40)
     itemSlot.icon = _G[itemSlot:GetName().."IconTexture"]
     local slotBorder = itemSlot:CreateTexture(nil, "OVERLAY")
     slotBorder:SetAllPoints()
     slotBorder:SetTexture("Interface/Buttons/UI-Quickslot2")
+    local slotHelp = container:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    slotHelp:SetPoint("TOPLEFT", itemSlot, "TOPRIGHT", 12, -2)
+    slotHelp:SetWidth(220)
+    slotHelp:SetJustifyH("LEFT")
+    slotHelp:SetText("Drag cache items here to track.\nRight-click icons below to remove.")
     itemSlot:SetScript("OnReceiveDrag", function(self)
         local infoType, itemID = GetCursorInfo()
         if infoType ~= "item" or not itemID then return end
@@ -170,17 +193,13 @@ local function CreateUI()
     end)
     itemSlot:SetScript("OnLeave", function() GameTooltip:Hide() end)
     -- Scrollable grid container below item slot
-    uiFrame.gridScroll = CreateFrame("ScrollFrame", nil, uiFrame, "UIPanelScrollFrameTemplate")
-    uiFrame.gridScroll:SetPoint("TOP", itemSlot, "BOTTOM", 0, -18)
-    uiFrame.gridScroll:SetSize(340, 160)
+    uiFrame.gridScroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
+    uiFrame.gridScroll:SetPoint("TOPLEFT", itemSlot, "BOTTOMLEFT", -2, -22)
+    uiFrame.gridScroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -12, 0)
     uiFrame.gridContent = CreateFrame("Frame", nil, uiFrame.gridScroll)
     uiFrame.gridContent:SetPoint("TOPLEFT")
-    uiFrame.gridContent:SetSize(340, 160)
+    uiFrame.gridContent:SetSize(10, 10)
     uiFrame.gridScroll:SetScrollChild(uiFrame.gridContent)
-    -- Close button
-    local close = CreateFrame("Button", nil, uiFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -4, -4)
-    close:SetScript("OnClick", function() uiFrame:Hide() end)
     uiFrame:Hide()
 end
 
@@ -195,7 +214,9 @@ local function UpdateGrid()
     local size = 32
     local spacing = 4
     local totalWidth = cols*size + (cols-1)*spacing
-    local leftOffset = (340 - totalWidth)/2
+    local scrollWidth = (uiFrame and uiFrame.gridScroll and uiFrame.gridScroll:GetWidth()) or totalWidth
+    local leftOffset = math.max(0, (scrollWidth - totalWidth) / 2)
+    uiFrame.gridContent:SetWidth(math.max(scrollWidth, totalWidth))
     for i, itemID in ipairs(watched) do
         local btn = CreateFrame("Button", "HAK_CacheBtn_"..itemID, uiFrame.gridContent)
         btn:SetSize(size,size)

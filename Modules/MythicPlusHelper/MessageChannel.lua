@@ -3,6 +3,36 @@ local addonName, addon = ...
 local PREFIX = "HAKMP" -- dedicated Mythic+ helper prefix
 addon.MPlusPartyInfo = addon.MPlusPartyInfo or {} -- [name] = {spec=, ilvl=, last=timestamp}
 local rosterPrev = {}
+local nextGearBroadcast = 0
+
+local function GetSettings()
+    if addon.GetModuleSettings then
+        return addon:GetModuleSettings('MythicPlusHelper', { monitoring = false, shareEnabled = true, shareNotify = false })
+    end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings and HerosArmyKnifeDB.settings.moduleSettings.MythicPlusHelper or { shareEnabled = true, shareNotify = false }
+end
+
+local function IsSharingEnabled()
+    if addon.MPlus_IsShareEnabled then return addon:MPlus_IsShareEnabled() end
+    local s = GetSettings()
+    return s.shareEnabled ~= false
+end
+
+local function IsInMythicParty()
+    if IsInRaid and IsInRaid() then return false end
+    if GetNumRaidMembers and GetNumRaidMembers() > 0 then return false end
+    if GetNumPartyMembers and GetNumPartyMembers() > 0 then return true end
+    if IsInGroup and IsInGroup() then
+        return true
+    end
+    return false
+end
+
+local function ShouldNotifySharing()
+    if addon.MPlus_ShouldNotifySharing then return addon:MPlus_ShouldNotifySharing() end
+    local s = GetSettings()
+    return s.shareNotify and true or false
+end
 
 -- Register prefix (Wrath classic uses RegisterAddonMessagePrefix)
 if RegisterAddonMessagePrefix then pcall(RegisterAddonMessagePrefix, PREFIX) end
@@ -17,8 +47,14 @@ function addon:SendAddonChannel(prefix, payload, channel, target)
         local chatTarget = target or (distro == "WHISPER" and UnitName("player")) or nil
         C_ChatInfo.SendAddonMessage(prefix, payload, distro, chatTarget)
         return true
+    elseif SendAddonMessage then
+        local distro = (channel == "RAID" and "RAID") or (channel == "GUILD" and "GUILD") or (channel == "PARTY" and "PARTY") or "WHISPER"
+        local chatTarget = target or (distro == "WHISPER" and UnitName("player")) or nil
+        SendAddonMessage(prefix, payload, distro, chatTarget)
+        return true
     else
-        SendChatMessage("["..(prefix or PREFIX).."] "..payload, channel)
+        local safePayload = ("["..(prefix or PREFIX).."] "..payload):gsub("|", "||")
+        SendChatMessage(safePayload, channel)
         return false
     end
 end
@@ -34,19 +70,18 @@ end
 
 -- Send full broadcast to group (party/raid) and request everyone
 function addon:MPlus_BroadcastFull()
+    if not IsSharingEnabled() then return end
+    if not IsInMythicParty() then return end
     local payload = BuildDataPayload()
-    if GetNumRaidMembers and GetNumRaidMembers() > 0 then
-        addon:SendAddonChannel(PREFIX, payload, "RAID")
-        addon:SendAddonChannel(PREFIX, "REQ", "RAID")
-    elseif GetNumPartyMembers and GetNumPartyMembers() > 0 then
-        addon:SendAddonChannel(PREFIX, payload, "PARTY")
-        addon:SendAddonChannel(PREFIX, "REQ", "PARTY")
-    end
+    addon:SendAddonChannel(PREFIX, payload, "PARTY")
+    addon:SendAddonChannel(PREFIX, "REQ", "PARTY")
 end
 
 -- Send to a single new member (WHISPER) and request only his data
 function addon:MPlus_SendTo(name)
     if not name or name == UnitName("player") then return end
+    if not IsSharingEnabled() then return end
+    if not IsInMythicParty() then return end
     local payload = BuildDataPayload()
     addon:SendAddonChannel(PREFIX, payload, "WHISPER", name)
     addon:SendAddonChannel(PREFIX, "REQ", "WHISPER", name)
@@ -59,7 +94,7 @@ local function OnAddonMessage(prefix, message, channel, sender)
     if not p or p == UnitName("player") then return end
     if message == "REQ" then
         -- Respond only to requester (WHISPER back)
-        addon:MPlus_SendTo(p)
+        if IsSharingEnabled() then addon:MPlus_SendTo(p) end
         return
     end
     local parts = { strsplit("|", message) }
@@ -67,7 +102,10 @@ local function OnAddonMessage(prefix, message, channel, sender)
         local spec = parts[2] or "DPS"
         local ilvl = tonumber(parts[3] or "0") or 0
         addon.MPlusPartyInfo[p] = { spec = spec, ilvl = ilvl, last = time() }
-        if addon.Notify then addon:Notify(p.." -> "..spec.." ilvl:"..ilvl, 'info') end
+        if ShouldNotifySharing() and addon.Notify then addon:Notify(p.." -> "..spec.." ilvl:"..ilvl, 'info') end
+        if addon._MPlusPartyWindow and addon._MPlusPartyWindow:IsShown() and addon._MPlusPartyWindow.Refresh then
+            addon._MPlusPartyWindow:Refresh()
+        end
     end
 end
 
@@ -89,11 +127,23 @@ local function CurrentRoster()
 end
 
 local function DetectNewMembers()
+    if not IsInMythicParty() then
+        rosterPrev = {}
+        return
+    end
     local current = CurrentRoster()
     for n,_ in pairs(current) do
         if not rosterPrev[n] then
             addon:MPlus_SendTo(n)
         end
+    end
+    for name in pairs(addon.MPlusPartyInfo) do
+        if name ~= UnitName("player") and not current[name] then
+            addon.MPlusPartyInfo[name] = nil
+        end
+    end
+    if addon._MPlusPartyWindow and addon._MPlusPartyWindow:IsShown() and addon._MPlusPartyWindow.Refresh then
+        addon._MPlusPartyWindow:Refresh()
     end
     rosterPrev = current
 end
@@ -103,6 +153,7 @@ frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 frame:RegisterEvent("RAID_ROSTER_UPDATE")
 frame:RegisterEvent("CHAT_MSG_ADDON")
+frame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         rosterPrev = CurrentRoster()
@@ -112,6 +163,15 @@ frame:SetScript("OnEvent", function(_, event, ...)
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, message, channel, sender = ...
         OnAddonMessage(prefix, message, channel, sender)
+    elseif event == "UNIT_INVENTORY_CHANGED" then
+        local unit = ...
+        if unit == "player" and IsSharingEnabled() and IsInMythicParty() then
+            local now = GetTime and GetTime() or time()
+            if now >= nextGearBroadcast then
+                nextGearBroadcast = now + 5
+                addon:MPlus_BroadcastFull()
+            end
+        end
     end
 end)
 

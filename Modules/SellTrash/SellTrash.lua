@@ -26,6 +26,7 @@ modFrame:RegisterEvent("MERCHANT_SHOW")
 modFrame:RegisterEvent("MERCHANT_CLOSED")
 modFrame:RegisterEvent("BAG_UPDATE")
 modFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+modFrame:RegisterEvent("BAG_OPEN")
 modFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 modFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 
@@ -484,7 +485,7 @@ modFrame:SetScript("OnEvent", function(self, event)
     elseif event == "MERCHANT_CLOSED" then
         if merchantButton then merchantButton:Hide() end
         QueueBagGlowRefresh()
-    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "PLAYER_ENTERING_WORLD" or event == "PLAYERBANKSLOTS_CHANGED" then
+    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "BAG_OPEN" or event == "PLAYER_ENTERING_WORLD" or event == "PLAYERBANKSLOTS_CHANGED" then
         bagCacheDirty = true
         QueueBagGlowRefresh()
     end

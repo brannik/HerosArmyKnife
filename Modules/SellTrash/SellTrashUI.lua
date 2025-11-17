@@ -76,6 +76,7 @@ local function RefreshTrackedList()
         row:SetPoint("TOPLEFT", listContent, "TOPLEFT", 0, -y)
         row:SetPoint("TOPRIGHT", listContent, "TOPRIGHT", 0, -y)
         row:SetHeight(28)
+        row:EnableMouse(true)
         
         -- Background
         if count == 0 then
@@ -129,6 +130,7 @@ local function RefreshTrackedList()
         rem:SetSize(24, 20)
         rem:SetText("X")
         rem:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        if addon.StyleButton then addon:StyleButton(rem, { width = 24, height = 20 }) end
         rem:SetScript("OnClick", function()
             for i, v in ipairs(s.watchItems) do
                 if v == id then
@@ -142,7 +144,11 @@ local function RefreshTrackedList()
         
         row:SetScript("OnEnter", function()
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink("item:"..id)
+            if GameTooltip.SetItemByID then
+                GameTooltip:SetItemByID(id)
+            else
+                GameTooltip:SetHyperlink("item:"..id)
+            end
             GameTooltip:Show()
         end)
         row:SetScript("OnLeave", function()
@@ -173,28 +179,31 @@ function addon:EnsureSellTrashUI()
     if uiFrame then return end
     uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKSellTrashFrame", 600, 500, 'panel') or CreateFrame("Frame", "HAKSellTrashFrame", UIParent, "BackdropTemplate")
     uiFrame:SetPoint("CENTER")
-    uiFrame:EnableMouse(true)
-    uiFrame:SetMovable(true)
-    uiFrame:RegisterForDrag("LeftButton")
-    uiFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    uiFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    
-    -- Title anchored to title region when available
-    local title = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    local titleRegion = uiFrame.GetTitleRegion and uiFrame:GetTitleRegion()
-    
-    title:SetPoint("CENTER", uiFrame, "TOP", 0, -5)
-    title:SetJustifyH("CENTER")
-    title:SetText("Trash List")
-    
-    -- Close button
-    local close = CreateFrame("Button", nil, uiFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -4, -4)
-    close:SetScript("OnClick", function() uiFrame:Hide() end)
-    
+    local container = addon.ApplyStandardPanelChrome and addon:ApplyStandardPanelChrome(uiFrame, "Trash List", { bodyPadding = { left = 18, right = 20, top = 74, bottom = 18 }, dragBody = true }) or uiFrame
+    container = container or uiFrame
+
+    if container == uiFrame then
+        uiFrame:EnableMouse(true)
+        uiFrame:SetMovable(true)
+        uiFrame:SetClampedToScreen(true)
+        uiFrame:RegisterForDrag("LeftButton")
+        uiFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        uiFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        local title = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        title:SetPoint("TOP", uiFrame, "TOP", 0, -6)
+        title:SetJustifyH("CENTER")
+        title:SetText("Trash List")
+        local close = CreateFrame("Button", nil, uiFrame, "UIPanelCloseButton")
+        close:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -6, -6)
+        close:SetScript("OnClick", function() uiFrame:Hide() end)
+        container = CreateFrame("Frame", nil, uiFrame)
+        container:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 18, -74)
+        container:SetPoint("BOTTOMRIGHT", uiFrame, "BOTTOMRIGHT", -20, 18)
+    end
+
     -- Item slot section
-    itemSlot = CreateFrame("Button", nil, uiFrame, "ItemButtonTemplate")
-    itemSlot:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 18, -56)
+    itemSlot = CreateFrame("Button", nil, container, "ItemButtonTemplate")
+    itemSlot:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
     itemSlot:SetSize(40, 40)
     itemSlot:RegisterForDrag("LeftButton")
     itemSlot:SetScript("OnReceiveDrag", function()
@@ -238,15 +247,15 @@ function addon:EnsureSellTrashUI()
         if CursorHasItem() then itemSlot:GetScript("OnReceiveDrag")() end
     end)
     
-    local addHelp = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local addHelp = container:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     addHelp:SetPoint("LEFT", itemSlot, "RIGHT", 10, 0)
     addHelp:SetText("Drag items\nhere to add")
     
     -- Add All button
-    local addAllBtn = CreateFrame("Button", nil, uiFrame, "UIPanelButtonTemplate")
+    local addAllBtn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
     addAllBtn:SetSize(132, 24)
     addAllBtn:SetText("Add Untracked")
-    addAllBtn:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -20, -56)
+    addAllBtn:SetPoint("TOPRIGHT", container, "TOPRIGHT", -2, 0)
     addAllBtn:SetScript("OnClick", function()
         local s = GetSettings()
         if addon.GetUntrackedSellableItems then
@@ -260,18 +269,20 @@ function addon:EnsureSellTrashUI()
             if addon.UpdateBagSlotGlow then addon:UpdateBagSlotGlow() end
         end
     end)
+    if addon.StyleButton then addon:StyleButton(addAllBtn) end
+    if addon.StyleButton then addon:StyleButton(addAllBtn) end
     
     -- Total value text
-    totalText = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    totalText = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     totalText:SetPoint("TOPLEFT", itemSlot, "BOTTOMLEFT", 0, -18)
-    totalText:SetPoint("RIGHT", uiFrame, "RIGHT", -28, 0)
+    totalText:SetPoint("RIGHT", container, "RIGHT", 0, 0)
     totalText:SetText("Total vendor value: 0 gold")
     totalText:SetTextColor(1, 1, 0.3)
     
     -- List scroll
-    listScroll = CreateFrame("ScrollFrame", nil, uiFrame, "UIPanelScrollFrameTemplate")
+    listScroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
     listScroll:SetPoint("TOPLEFT", totalText, "BOTTOMLEFT", -2, -12)
-    listScroll:SetPoint("BOTTOMRIGHT", uiFrame, "BOTTOMRIGHT", -32, 18)
+    listScroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -20, 0)
     
     listContent = CreateFrame("Frame", nil, listScroll)
     listContent:SetSize(480, 10)
@@ -285,3 +296,14 @@ function addon:ToggleSellTrashUI()
     addon:EnsureSellTrashUI()
     if uiFrame:IsShown() then uiFrame:Hide() else uiFrame:Show(); RefreshTrackedList() end
 end
+
+local bagWatcher = CreateFrame("Frame")
+bagWatcher:RegisterEvent("BAG_UPDATE")
+bagWatcher:RegisterEvent("BAG_UPDATE_DELAYED")
+bagWatcher:RegisterEvent("BAG_OPEN")
+bagWatcher:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+bagWatcher:SetScript("OnEvent", function()
+    if uiFrame and uiFrame:IsShown() then
+        RefreshTrackedList()
+    end
+end)

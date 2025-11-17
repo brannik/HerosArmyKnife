@@ -112,6 +112,7 @@ local function RefreshProtectedList()
         rem:SetSize(24, 20)
         rem:SetText("X")
         rem:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        if addon.StyleButton then addon:StyleButton(rem) end
         rem:SetScript("OnClick", function()
             for i, v in ipairs(s.protectedItems) do
                 if v == id then
@@ -125,7 +126,11 @@ local function RefreshProtectedList()
         
         row:SetScript("OnEnter", function()
             GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink("item:"..id)
+            if GameTooltip.SetItemByID then
+                GameTooltip:SetItemByID(id)
+            else
+                GameTooltip:SetHyperlink("item:"..id)
+            end
             GameTooltip:AddLine("PROTECTED FROM SELL", 0.2, 0.8, 1)
             GameTooltip:Show()
         end)
@@ -145,29 +150,29 @@ function addon:EnsureProtectedUI()
     if protFrame then return end
     protFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKProtectedItemsFrame", 600, 500, 'panel') or CreateFrame("Frame", "HAKProtectedItemsFrame", UIParent, "BackdropTemplate")
     protFrame:SetPoint("CENTER")
-    protFrame:EnableMouse(true)
-    protFrame:SetMovable(true)
-    protFrame:RegisterForDrag("LeftButton")
-    protFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    protFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    
-    -- Title anchored to title region when available
-    local title = protFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    local titleRegion = protFrame.GetTitleRegion and protFrame:GetTitleRegion()
-    
+    local container = addon.ApplyStandardPanelChrome and addon:ApplyStandardPanelChrome(protFrame, "Protected List", { bodyPadding = { left = 18, right = 20, top = 74, bottom = 18 } }) or protFrame
+    container = container or protFrame
 
-    title:SetPoint("CENTER", protFrame, "TOP", 0, -5)
-    title:SetJustifyH("CENTER")
-    title:SetText("Protected List")
-    
-    -- Close button
-    local close = CreateFrame("Button", nil, protFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", protFrame, "TOPRIGHT", -4, -4)
-    close:SetScript("OnClick", function() protFrame:Hide() end)
+    if container == protFrame then
+        protFrame:EnableMouse(true)
+        protFrame:SetMovable(true)
+        protFrame:RegisterForDrag("LeftButton")
+        protFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        protFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+
+        local title = protFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        title:SetPoint("CENTER", protFrame, "TOP", 0, -5)
+        title:SetJustifyH("CENTER")
+        title:SetText("Protected List")
+
+        local close = CreateFrame("Button", nil, protFrame, "UIPanelCloseButton")
+        close:SetPoint("TOPRIGHT", protFrame, "TOPRIGHT", -4, -4)
+        close:SetScript("OnClick", function() protFrame:Hide() end)
+    end
     
     -- Item slot section
-    local protSlot = CreateFrame("Button", nil, protFrame, "ItemButtonTemplate")
-    protSlot:SetPoint("TOPLEFT", protFrame, "TOPLEFT", 18, -56)
+    local protSlot = CreateFrame("Button", nil, container, "ItemButtonTemplate")
+    protSlot:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
     protSlot:SetSize(40, 40)
     protSlot:RegisterForDrag("LeftButton")
     protSlot:SetScript("OnReceiveDrag", function()
@@ -199,14 +204,14 @@ function addon:EnsureProtectedUI()
         if CursorHasItem() then protSlot:GetScript("OnReceiveDrag")() end
     end)
     
-    local protHelp = protFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local protHelp = container:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     protHelp:SetPoint("LEFT", protSlot, "RIGHT", 10, 0)
     protHelp:SetText("Drag items\nhere to add")
     
     -- List scroll
-    protScroll = CreateFrame("ScrollFrame", nil, protFrame, "UIPanelScrollFrameTemplate")
+    protScroll = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
     protScroll:SetPoint("TOPLEFT", protSlot, "BOTTOMLEFT", -2, -12)
-    protScroll:SetPoint("BOTTOMRIGHT", protFrame, "BOTTOMRIGHT", -32, 18)
+    protScroll:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -20, 0)
     
     protContent = CreateFrame("Frame", nil, protScroll)
     protContent:SetSize(480, 10)
@@ -220,3 +225,14 @@ function addon:ToggleProtectedUI()
     addon:EnsureProtectedUI()
     if protFrame:IsShown() then protFrame:Hide() else protFrame:Show(); RefreshProtectedList() end
 end
+
+local protBagWatcher = CreateFrame("Frame")
+protBagWatcher:RegisterEvent("BAG_UPDATE")
+protBagWatcher:RegisterEvent("BAG_UPDATE_DELAYED")
+protBagWatcher:RegisterEvent("BAG_OPEN")
+protBagWatcher:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
+protBagWatcher:SetScript("OnEvent", function()
+    if protFrame and protFrame:IsShown() then
+        RefreshProtectedList()
+    end
+end)

@@ -7,6 +7,7 @@
 
 Core.lua
 Theme.lua
+UI.lua
 Toolbar.lua
 Options.lua
 Slash.lua

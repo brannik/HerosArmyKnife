@@ -131,27 +131,32 @@ end
 
 function EnsureWindow()
     if q.frame then return end
-    local f = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAK_LFMChannelFeed", 420, 340, 'panel') or CreateFrame("Frame", "HAK_LFMChannelFeed", UIParent, "BackdropTemplate")
+    local f = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAK_LFMChannelFeed", 460, 360, 'panel') or CreateFrame("Frame", "HAK_LFMChannelFeed", UIParent, "BackdropTemplate")
     f:SetPoint("CENTER", UIParent, "CENTER", 320, -40)
-    f:EnableMouse(true)
-    f:SetMovable(true)
-    -- Single title (remove duplicate header texture)
-    local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOP", f, "TOP", 0, 0)
-    title:SetText("LFG Monitor")
-    local titleDrag = CreateFrame("Frame", nil, f)
-    titleDrag:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
-    -- Reserve area for close button so it remains clickable
-    titleDrag:SetPoint("TOPRIGHT", f, "TOPRIGHT", -34, 0)
-    titleDrag:SetHeight(34)
-    titleDrag:EnableMouse(true)
-    titleDrag:RegisterForDrag("LeftButton")
-    titleDrag:SetScript("OnDragStart", function() f:StartMoving() end)
-    titleDrag:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
-    close:SetFrameLevel(f:GetFrameLevel()+10)
-    close:SetScript("OnClick", function()
+    if not f:GetWidth() or f:GetWidth() <= 0 then f:SetSize(460, 360) end
+    local container
+    if addon.ApplyStandardPanelChrome then
+        container = addon:ApplyStandardPanelChrome(f, "LFG Monitor", { bodyPadding = { left = 18, right = 24, top = 78, bottom = 22 }, dragBody = true })
+    end
+    local manualClose
+    if not container then
+        f:EnableMouse(true)
+        f:SetMovable(true)
+        f:SetClampedToScreen(true)
+        f:RegisterForDrag("LeftButton")
+        f:SetScript("OnDragStart", function(self) self:StartMoving() end)
+        f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+        local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+        title:SetPoint("TOP", f, "TOP", 0, -6)
+        title:SetText("LFG Monitor")
+        manualClose = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+        manualClose:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
+        container = CreateFrame("Frame", nil, f)
+        container:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -78)
+        container:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -24, 22)
+    end
+    container = container or f
+    local function HandleClose()
         -- Mark all current entries declined and clear list
         for _, e in ipairs(q.entries) do
             if not e.norm then
@@ -163,11 +168,16 @@ function EnsureWindow()
         q:RefreshList()
         f:Hide()
         q.userClosed = true -- user intentionally closed; suppress auto re-open on new messages
-    end)
+    end
+    if f.closeButton then
+        f.closeButton:SetScript("OnClick", HandleClose)
+    elseif manualClose then
+        manualClose:SetScript("OnClick", HandleClose)
+    end
     -- Scroll container
-    local scrollFrame = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -40)
-    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -30, 12)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, container, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -18, 0)
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetSize(10,10)
     scrollFrame:SetScrollChild(content)
@@ -239,6 +249,10 @@ local function AcquireRow()
     row.declineBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
     row.declineBtn:SetSize(60,22)
     row.declineBtn:SetPoint("RIGHT", row.acceptBtn, "LEFT", -8, 0)
+    if addon.StyleButton then
+        addon:StyleButton(row.acceptBtn)
+        addon:StyleButton(row.declineBtn)
+    end
     return row
 end
 
