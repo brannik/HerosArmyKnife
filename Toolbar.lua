@@ -111,8 +111,8 @@ function addon:CreateToolbarButton(key, texture, onClick, onTooltip)
     f.texture = f:CreateTexture(nil, "BACKGROUND")
     f.texture:SetAllPoints()
     f.texture:SetTexture(texture or "Interface\\Icons\\INV_Misc_QuestionMark")
-    f:SetScript("OnClick", function()
-        if onClick then onClick(f) end
+    f:SetScript("OnClick", function(frame, button)
+        if onClick then onClick(f, button) end
     end)
     -- Hover overlay
     if not f.hoverOverlay then

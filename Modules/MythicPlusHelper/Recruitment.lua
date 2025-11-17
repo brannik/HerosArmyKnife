@@ -301,12 +301,33 @@ function R:RequestRefresh()
 end
 
 -- Full party monitoring and whisper autorespond
+local function IsGroupLeader()
+    -- Wrath client leader checks
+    if IsRaidLeader and IsRaidLeader() then return true end
+    if IsPartyLeader and IsPartyLeader() then return true end
+    return false
+end
+
+local function InBattlegroundOrArena()
+    if IsInInstance then
+        local inInstance, instType = IsInInstance()
+        if inInstance and (instType == "pvp" or instType == "arena") then return true end
+    end
+    return false
+end
+
 local function CheckFullParty()
+    -- Gate: only apply lock logic when actively recruiting, we are leader, and not in BG/arena
+    if not R.active or not IsGroupLeader() or InBattlegroundOrArena() then
+        -- If conditions no longer valid, clear existing lock without notification spam
+        if R.fullPartyExpire then R.fullPartyExpire = nil end
+        return
+    end
     local count
     if GetNumRaidMembers and GetNumRaidMembers() > 0 then
         count = GetNumRaidMembers()
     else
-        count = GetNumPartyMembers() + 1
+        count = (GetNumPartyMembers and GetNumPartyMembers() or 0) + 1
     end
     if count >= 5 and not R.fullPartyExpire then
         R.fullPartyExpire = time() + 60
@@ -324,7 +345,8 @@ eventFrame:RegisterEvent("CHAT_MSG_WHISPER")
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "CHAT_MSG_WHISPER" then
         local msg, sender = ...
-        if R.fullPartyExpire and time() < R.fullPartyExpire then
+        -- Only auto-respond if we are in valid recruitment lock context
+        if R.active and IsGroupLeader() and not InBattlegroundOrArena() and R.fullPartyExpire and time() < R.fullPartyExpire then
             SendChatMessage("Party currently full, please wait.", "WHISPER", nil, sender)
         end
     else
@@ -337,7 +359,8 @@ end)
 local countdownFrame = CreateFrame("Frame")
 countdownFrame.t = 0
 countdownFrame:SetScript("OnUpdate", function(self, elapsed)
-    if not R.fullPartyExpire then return end
+    -- Do not update if lock inactive or gating conditions invalid
+    if not R.fullPartyExpire or not R.active or not IsGroupLeader() or InBattlegroundOrArena() then return end
     self.t = self.t + elapsed
     if self.t < 1 then return end
     self.t = 0

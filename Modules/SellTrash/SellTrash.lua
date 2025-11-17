@@ -1,17 +1,26 @@
 local addonName, addon = ...
 
     local ms = HerosArmyKnifeDB.settings.moduleSettings
-    ms.SellTrash = ms.SellTrash or { auto = true, debug = false, watchItems = {} }
+    ms.SellTrash = ms.SellTrash or { auto = true, debug = false, watchItems = {}, protectedItems = {} }
     if ms.SellTrash.debug == nil then ms.SellTrash.debug = false end
 addon:RegisterInit(function()
     if addon.GetModuleSettings then addon:GetModuleSettings('SellTrash', { auto = true, debug = false, watchItems = {} }) end
 end)
 
 local function GetSettings()
-    if addon.GetModuleSettings then return addon:GetModuleSettings('SellTrash', { auto = true, debug = false, watchItems = {} }) end
-    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.SellTrash or { auto = true, debug = false, watchItems = {} }
+    if addon.GetModuleSettings then return addon:GetModuleSettings('SellTrash', { auto = true, debug = false, watchItems = {}, protectedItems = {} }) end
+    return HerosArmyKnifeDB and HerosArmyKnifeDB.settings and HerosArmyKnifeDB.settings.moduleSettings.SellTrash or { auto = true, debug = false, watchItems = {}, protectedItems = {} }
 end
 
+local function IsProtected(itemID)
+    if not itemID then return false end
+    local s = GetSettings()
+    local list = s.protectedItems or {}
+    for _, id in ipairs(list) do if id == itemID then return true end end
+    return false
+end
+
+-- Create event frame for merchant and bag updates
 local modFrame = CreateFrame("Frame")
 modFrame:RegisterEvent("MERCHANT_SHOW")
 modFrame:RegisterEvent("MERCHANT_CLOSED")
@@ -53,12 +62,16 @@ local function CountItemInBags(itemID)
 end
 
 local function SellGreyItems(silent)
+    local s = GetSettings()
+    local protected = {}
+    for _, id in ipairs(s.protectedItems or {}) do protected[id] = true end
     local soldCount = 0
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
             local texture, itemCount, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
-            if link and quality == 0 then
+            local id = GetItemIDFromLink(link)
+            if link and quality == 0 and not protected[id] then
                 UseContainerItem(bag, slot)
                 soldCount = soldCount + (itemCount or 1)
             end
@@ -71,14 +84,19 @@ end
 local function SellTrackedItems(silent)
     local s = GetSettings()
     local watch = s.watchItems or {}
-    if #watch == 0 then if not silent and addon.Notify then addon:Notify("Tracked list is empty.", 'warn') end return 0, 0 end
+    local protected = {}
+    for _, id in ipairs(s.protectedItems or {}) do protected[id] = true end
+    if #watch == 0 then
+        if not silent and addon.Notify then addon:Notify("Tracked list is empty.", 'warn') end
+        return 0, 0
+    end
     local soldStacks, soldItems = 0, 0
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
         for slot = 1, slots do
             local texture, itemCount, locked, quality, readable, lootable, link = GetContainerItemInfo(bag, slot)
             local id = GetItemIDFromLink(link)
-            if id and IsTracked(id) then
+            if id and IsTracked(id) and not protected[id] then
                 UseContainerItem(bag, slot)
                 soldStacks = soldStacks + 1
                 soldItems = soldItems + (itemCount or 1)
@@ -86,94 +104,197 @@ local function SellTrackedItems(silent)
         end
     end
     if not silent and addon.Notify then
-        if soldStacks > 0 then addon:Notify(string.format("Sold %d stacks (%d items) from tracked list.", soldStacks, soldItems), 'success')
-        else addon:Notify("No tracked items found in bags.", 'info') end
+        if soldStacks > 0 then
+            addon:Notify(string.format("Sold %d stacks (%d items) from tracked list.", soldStacks, soldItems), 'success')
+        else
+            addon:Notify("No tracked items found in bags.", 'info')
+        end
     end
     return soldStacks, soldItems
 end
 
 -- UI similar to CacheOpener: item slot + tracked list
 local uiFrame, itemSlot, listScroll, listContent, totalText
+local protFrame, protScroll, protContent
 
-local function RefreshTrackedList()
-    if not listContent then return end
-    for i = 1, select('#', listContent:GetChildren()) do
-        local child = select(i, listContent:GetChildren())
-        if child and child._hakTrackedRow then child:Hide(); child:SetParent(nil) end
-    end
+local function GetUntrackedSellableItems()
     local s = GetSettings()
-    local watch = s.watchItems or {}
-    local y = 0
-    local baseWidth = (listScroll and listScroll:GetWidth() or 460)
-    for _, id in ipairs(watch) do
-        local row = CreateFrame("Frame", nil, listContent)
-        row._hakTrackedRow = true
-        row:SetSize(baseWidth, 26)
-        row:SetPoint("TOPLEFT", listContent, "TOPLEFT", 0, -y)
-        row:EnableMouse(true)
-        -- Count label (before icon)
-        local countFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        countFS:SetJustifyH("RIGHT")
-        countFS:SetWidth(26)
-        countFS:SetPoint("LEFT", row, "LEFT", 0, 0)
-        local icon = row:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(20,20)
-        icon:SetPoint("LEFT", countFS, "RIGHT", 4, 0)
-        local name, link, _, _, _, _, _, _, _, tex = GetItemInfo(id)
-        if tex then icon:SetTexture(tex) end
-        local fs = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-        fs:SetPoint("LEFT", icon, "RIGHT", 6, 0)
-        fs:SetJustifyH("LEFT")
-        -- Reserve width: count(26)+sp(4)+icon(20)+sp(6)+removeBtn(22)+spRight(4)
-        fs:SetWidth(baseWidth - (26+4+20+6+22+4))
-        local countInBags = CountItemInBags(id)
-        local displayName = name or ("Item "..id)
-        countFS:SetText(tostring(countInBags or 0))
-        fs:SetText(displayName)
-        if countInBags == 0 then
-            fs:SetTextColor(0.6,0.6,0.6)
-            icon:SetVertexColor(0.6,0.6,0.6)
-            countFS:SetTextColor(0.6,0.6,0.6)
-        else
-            fs:SetTextColor(1,1,1)
-            icon:SetVertexColor(1,1,1)
-            countFS:SetTextColor(1,1,1)
+    local tracked = {}
+    for _, id in ipairs(s.watchItems or {}) do tracked[id] = true end
+    local protected = {}
+    for _, id in ipairs(s.protectedItems or {}) do protected[id] = true end
+    local found = {}
+    for bag = 0, 4 do
+        local slots = GetContainerNumSlots(bag)
+        for slot = 1, slots do
+            local link = GetContainerItemLink(bag, slot)
+            if link then
+                local id = GetItemIDFromLink(link)
+                local _, _, quality = GetItemInfo(id)
+                if id and quality and quality < 3 and not tracked[id] and not protected[id] then
+                    found[id] = true
+                end
+            end
         end
-        local rem = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-        rem:SetSize(22,20)
-        rem:SetText("X")
-        rem:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-        rem:SetScript("OnClick", function()
-            -- remove id from list
-            for i, v in ipairs(s.watchItems) do if v == id then table.remove(s.watchItems, i) break end end
-            RefreshTrackedList()
-            UpdateTotalText()
-        end)
-        row:SetScript("OnEnter", function()
-            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink("item:"..id)
-            GameTooltip:Show()
-        end)
-        row:SetScript("OnLeave", function()
-            GameTooltip:Hide()
-        end)
-        y = y + 28
     end
-    if y < 10 then y = 10 end
-    listContent:SetHeight(y)
-    if listScroll and listScroll.UpdateScrollChildRect then listScroll:UpdateScrollChildRect() end
-    -- update total value display if present
-    if totalText and uiFrame and uiFrame:IsShown() then
-        -- will be refreshed by UpdateTotalText below
+    local result = {}
+    for id in pairs(found) do table.insert(result, id) end
+    return result
+end
+
+-- UI logic moved to SellTrashUI.lua and ProtectedUI.lua
+
+-- Left click: tracked items UI
+local function ToggleUI()
+    if addon.ToggleSellTrashUI then addon:ToggleSellTrashUI() end
+end
+
+-- Right click: protected items UI
+local function ToggleProtectedUI()
+    if addon.ToggleProtectedUI then addon:ToggleProtectedUI() end
+end
+
+local bagButtonCache = {}
+
+local function SetButtonDebugLabel(button, bagID, slotID, enabled)
+    if not button then return end
+    if enabled then
+        if not button.DebugText then
+            local debugText = button:CreateFontString(nil, "OVERLAY")
+            debugText:SetFont("Fonts\\FRIZQT__.TTF", 10)
+            debugText:SetTextColor(1, 1, 0)
+            debugText:SetPoint("CENTER", button, "CENTER")
+            button.DebugText = debugText
+        end
+        button.DebugText:SetText(bagID .. ":" .. slotID)
+        button.DebugText:Show()
+    elseif button.DebugText then
+        button.DebugText:Hide()
+    end
+end
+
+local function CacheBagButton(bagID, slotID, button, debugEnabled)
+    if type(bagID) ~= "number" or type(slotID) ~= "number" or not button then return end
+    bagButtonCache[bagID] = bagButtonCache[bagID] or {}
+    bagButtonCache[bagID][slotID] = button
+    SetButtonDebugLabel(button, bagID, slotID, debugEnabled)
+end
+
+local function RefreshBagButtonCache(debugEnabled)
+    for bagID, slotMap in pairs(bagButtonCache) do
+        for slotID, button in pairs(slotMap) do
+            if not debugEnabled then SetButtonDebugLabel(button, bagID, slotID, false) end
+            slotMap[slotID] = nil
+        end
+    end
+
+    local frameCount = NUM_CONTAINER_FRAMES or 13
+    for i = 1, frameCount do
+        local container = _G["ContainerFrame" .. i]
+        if container and container.GetID then
+            local bagID = container:GetID()
+            if bagID ~= nil then
+                local slotCount = container.size or GetContainerNumSlots(bagID) or 0
+                for idx = 1, slotCount do
+                    local button = _G[container:GetName() .. "Item" .. idx]
+                    if button and button.GetID then
+                        CacheBagButton(bagID, button:GetID(), button, debugEnabled)
+                    end
+                end
+            end
+        end
+    end
+
+    local frame = EnumerateFrames and EnumerateFrames()
+    while frame do
+        local bagID, slotID
+        if frame.GetBag and frame.GetSlot then
+            bagID = frame:GetBag()
+            slotID = frame:GetSlot()
+        elseif frame.GetBagID and frame.GetID then
+            bagID = frame:GetBagID()
+            slotID = frame:GetID()
+        elseif frame.GetBag and frame.GetID then
+            bagID = frame:GetBag()
+            slotID = frame:GetID()
+        end
+
+        if type(bagID) == "number" and type(slotID) == "number" then
+            CacheBagButton(bagID, slotID, frame, debugEnabled)
+        end
+
+        frame = EnumerateFrames and EnumerateFrames(frame)
+    end
+end
+
+-- Find the actual item button frame for a given bag/slot by searching UIParent
+local function FindItemButton(bag, slot)
+    local slotMap = bagButtonCache[bag]
+    return slotMap and slotMap[slot] or nil
+end
+
+local function UpdateSlot(bag, slot, itemButton, trackedMap, protectedMap)
+    if not itemButton then return end
+
+    local itemID = GetContainerItemID(bag, slot)
+    local isTracked = itemID and trackedMap[itemID]
+    local isProtected = itemID and protectedMap[itemID]
+
+    -- Handle tracked icon (gold coin) on top-right
+    if isTracked then
+        if not itemButton.TrackedIcon then
+            local icon = itemButton:CreateTexture(nil, "OVERLAY")
+            icon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
+            icon:SetWidth(13)
+            icon:SetHeight(13)
+            icon:SetPoint("BOTTOMLEFT", itemButton, "BOTTOMLEFT", 2, 2)
+            itemButton.TrackedIcon = icon
+        end
+        itemButton.TrackedIcon:Show()
+    elseif itemButton.TrackedIcon then
+        itemButton.TrackedIcon:Hide()
+    end
+
+    -- Handle protected icon (silver coin) on bottom-left
+    if isProtected then
+        if not itemButton.ProtectedIcon then
+            local icon = itemButton:CreateTexture(nil, "OVERLAY")
+            icon:SetTexture("Interface\\Icons\\INV_Shield_04")
+            icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            icon:SetWidth(13)
+            icon:SetHeight(13)
+            icon:SetPoint("BOTTOMLEFT", itemButton, "BOTTOMLEFT", 2, 2)
+            itemButton.ProtectedIcon = icon
+        end
+        itemButton.ProtectedIcon:Show()
+    elseif itemButton.ProtectedIcon then
+        itemButton.ProtectedIcon:Hide()
+    end
+end
+
+function addon:UpdateBagSlotGlow()
+    local settings = GetSettings()
+    RefreshBagButtonCache(settings.debug)
+
+    local trackedMap = {}
+    for _, id in ipairs(settings.watchItems or {}) do trackedMap[id] = true end
+    local protectedMap = {}
+    for _, id in ipairs(settings.protectedItems or {}) do protectedMap[id] = true end
+
+    for bag = 0, 4 do
+        local numSlots = GetContainerNumSlots(bag)
+        for slot = 1, numSlots do
+            local itemButton = FindItemButton(bag, slot)
+            UpdateSlot(bag, slot, itemButton, trackedMap, protectedMap)
+        end
     end
 end
 
 -- Compute total vendor value (in copper) of tracked items currently in bags
-local function ComputeTrackedTotalCopper()
+function addon:ComputeTrackedTotalCopper()
     local s = GetSettings()
     local watch = s.watchItems or {}
     if #watch == 0 then return 0 end
-    -- Build quick lookup set for tracked IDs
     local tracked = {}
     for _, id in ipairs(watch) do tracked[id] = true end
     local total = 0
@@ -196,7 +317,7 @@ local function ComputeTrackedTotalCopper()
     return total
 end
 
-local function FormatCopper(copper)
+function addon:FormatCopper(copper)
     if type(GetCoinTextureString) == 'function' then
         return GetCoinTextureString(copper)
     end
@@ -207,7 +328,7 @@ local function FormatCopper(copper)
 end
 
 -- Compute total vendor value (in copper) of all grey-quality items in bags
-local function ComputeGreysTotalCopper()
+function addon:ComputeGreysTotalCopper()
     local total = 0
     for bag = 0, 4 do
         local slots = GetContainerNumSlots(bag)
@@ -224,8 +345,8 @@ local function ComputeGreysTotalCopper()
 end
 
 -- Sell both greys and tracked vendor items with a unified notification
-local function SellTrashAndTracked(silent)
-    local soldGreys = SellGreyItems(true) -- invoke silently; unify messaging here
+function addon:SellTrashAndTracked(silent)
+    local soldGreys = SellGreyItems(true)
     local soldTrackedStacks, soldTrackedItems = SellTrackedItems(true)
     if silent then return soldGreys, soldTrackedStacks, soldTrackedItems end
     if addon.Notify then
@@ -242,95 +363,31 @@ local function SellTrashAndTracked(silent)
     return soldGreys, soldTrackedStacks, soldTrackedItems
 end
 
-local function UpdateTotalText()
-    if not totalText then return end
-    local total = ComputeTrackedTotalCopper()
-    totalText:SetText("Tracked value in bags: "..FormatCopper(total))
-end
-
-local function EnsureUI()
-    if uiFrame then return end
-    uiFrame = addon.CreateThemedFrame and addon:CreateThemedFrame(UIParent, "HAKSellTrashFrame", 560, 450, 'panel') or CreateFrame("Frame", "HAKSellTrashFrame", UIParent, "BackdropTemplate")
-    uiFrame:SetPoint("CENTER")
-    uiFrame:EnableMouse(true)
-    uiFrame:SetMovable(true)
-    uiFrame:RegisterForDrag("LeftButton")
-    uiFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    uiFrame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
-    local title = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOP", uiFrame, "TOP", 0, 0)
-    title:SetText("Trash Sell List")
-    local close = CreateFrame("Button", nil, uiFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", uiFrame, "TOPRIGHT", -4, -4)
-    close:SetScript("OnClick", function() uiFrame:Hide() end)
-    -- Item slot
-    itemSlot = CreateFrame("Button", nil, uiFrame, "ItemButtonTemplate")
-    itemSlot:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 14, -38)
-    itemSlot:SetSize(40, 40)
-    itemSlot:RegisterForDrag("LeftButton")
-    itemSlot:SetScript("OnReceiveDrag", function()
-        local kind, p1, p2 = GetCursorInfo()
-        if kind == "item" then
-            local id
-            local link
-            if type(p2) == "string" and p2:find("|Hitem:") then
-                link = p2
-                id = GetItemIDFromLink(link)
-            end
-            if not id and type(p1) == "number" then
-                id = p1
-            end
-            if id then
-                local s = GetSettings(); s.watchItems = s.watchItems or {}
-                local exists = false
-                for _, v in ipairs(s.watchItems) do if v == id then exists = true break end end
-                if not exists then table.insert(s.watchItems, id) end
-                RefreshTrackedList()
-                UpdateTotalText()
-            end
-            ClearCursor()
-        end
-    end)
-    itemSlot:SetScript("OnMouseUp", function(self, btn)
-        if CursorHasItem() then itemSlot:GetScript("OnReceiveDrag")() end
-    end)
-    local addHelp = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    addHelp:SetPoint("LEFT", itemSlot, "RIGHT", 8, 0)
-    addHelp:SetText("Drag vendor items here to add\nThey will sell with trash at vendor")
-    -- Total vendor value label above the list, centered within the left half of the frame
-    local leftHalf = CreateFrame("Frame", nil, uiFrame)
-    leftHalf:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 0, -89) -- moved 25px further down
-    leftHalf:SetPoint("TOPRIGHT", uiFrame, "TOP", 0, -89)
-    leftHalf:SetHeight(1)
-    totalText = uiFrame:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    totalText:SetPoint("TOP", leftHalf, "TOP", 0, 0)
-    totalText:SetText("Tracked value in bags: 0")
-    -- List
-    listScroll = CreateFrame("ScrollFrame", nil, uiFrame, "UIPanelScrollFrameTemplate")
-    listScroll:SetPoint("TOPLEFT", uiFrame, "TOPLEFT", 16, -112)
-    listScroll:SetPoint("BOTTOMRIGHT", uiFrame, "BOTTOMRIGHT", -28, 14)
-    listContent = CreateFrame("Frame", nil, listScroll)
-    listContent:SetSize(500, 10)
-    listScroll:SetScrollChild(listContent)
-    RefreshTrackedList()
-    UpdateTotalText()
-    uiFrame:Hide()
-end
-
-local function ToggleUI()
-    EnsureUI()
-    if uiFrame:IsShown() then uiFrame:Hide() else uiFrame:Show(); RefreshTrackedList() end
+function addon:UpdateTotalText()
+    -- This will be called from SellTrashUI if needed
 end
 
 -- Merchant button
 local merchantButton
+
+-- Create update frame for continuous icon updates
+local updateFrame = CreateFrame("Frame")
+local elapsedSinceRefresh = 0
+updateFrame:SetScript("OnUpdate", function(_, elapsed)
+    elapsedSinceRefresh = elapsedSinceRefresh + (elapsed or 0)
+    if elapsedSinceRefresh < 0.2 then return end
+    elapsedSinceRefresh = 0
+    if addon.IsModuleEnabled and addon:IsModuleEnabled("SellTrash") then
+        addon:UpdateBagSlotGlow()
+    end
+end)
 
 modFrame:SetScript("OnEvent", function(self, event)
     if not addon.IsModuleEnabled or not addon:IsModuleEnabled("SellTrash") then return end
     local s = GetSettings()
     if event == "MERCHANT_SHOW" then
         -- Auto-sell both greys and tracked items when enabled
-        if s.auto then SellTrashAndTracked(false) end
+        if s.auto then addon:SellTrashAndTracked(false) end
         -- ensure merchant button
         if not merchantButton then
             merchantButton = CreateFrame("Button", "HAK_SellTrackedButton", MerchantFrame, "UIPanelButtonTemplate")
@@ -338,17 +395,17 @@ modFrame:SetScript("OnEvent", function(self, event)
             merchantButton:SetText("Sell Trash")
             merchantButton:SetPoint("TOPRIGHT", MerchantFrame, "TOPRIGHT", -50, -44)
             merchantButton:SetScript("OnClick", function()
-                SellTrashAndTracked(false)
+                addon:SellTrashAndTracked(false)
             end)
             merchantButton:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText("Sell Trash")
-                local greys = ComputeGreysTotalCopper()
-                local tracked = ComputeTrackedTotalCopper()
+                local greys = addon:ComputeGreysTotalCopper()
+                local tracked = addon:ComputeTrackedTotalCopper()
                 local combined = (greys or 0) + (tracked or 0)
-                GameTooltip:AddLine("Greys:  "..FormatCopper(greys), 1,1,1)
-                GameTooltip:AddLine("Tracked:"..FormatCopper(tracked), 1,1,1)
-                GameTooltip:AddLine("Total:  "..FormatCopper(combined), 1,1,1)
+                GameTooltip:AddLine("Greys:  "..addon:FormatCopper(greys), 1,1,1)
+                GameTooltip:AddLine("Tracked:"..addon:FormatCopper(tracked), 1,1,1)
+                GameTooltip:AddLine("Total:  "..addon:FormatCopper(combined), 1,1,1)
                 GameTooltip:Show()
             end)
             merchantButton:SetScript("OnLeave", function()
@@ -358,21 +415,27 @@ modFrame:SetScript("OnEvent", function(self, event)
         merchantButton:Show()
         -- Always enabled: sells greys plus tracked list
         merchantButton:SetEnabled(true)
+        addon:UpdateBagSlotGlow()
     elseif event == "MERCHANT_CLOSED" then
         if merchantButton then merchantButton:Hide() end
     elseif event == "BAG_UPDATE" then
-        if uiFrame and uiFrame:IsShown() then RefreshTrackedList(); UpdateTotalText() end
+        addon:UpdateBagSlotGlow()
     end
 end)
 
-local function OnClick(btn)
-    ToggleUI()
+local function OnClick(btn, button)
+    if button == "RightButton" then
+        ToggleProtectedUI()
+    else
+        ToggleUI()
+    end
 end
 
 local function OnTooltip(btn)
     local lines = {
         "Sell Trash",
-        "Click: Open trash/vendor tracking UI.",
+        "Left-click: Open trash/vendor tracking UI.",
+        "Right-click: Open protected items UI.",
         "At vendor: sells greys + tracked vendor items.",
         "Auto-sell: On by default (can be toggled in options).",
     }
