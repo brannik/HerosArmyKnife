@@ -250,9 +250,12 @@ function addon:RebuildToolbar()
     addon:LayoutToolbar()
     if addon.ApplyTheme then addon:ApplyTheme() end
     -- Post-build hook: allow modules to refresh visuals (e.g., MythicPlusHelper glow)
-        if addon.MythicPlusHelper_ForceRefresh and addon:IsModuleEnabled("MythicPlusHelper") then addon:MythicPlusHelper_ForceRefresh() end
-        if addon.MPlus_UpdateMonitoringIndicator and addon:IsModuleEnabled("MythicPlusHelper") then addon.MPlus_UpdateMonitoringIndicator() end
-        if _G.RareTracker_UpdateIndicator then _G.RareTracker_UpdateIndicator() end
+    if addon.MythicPlusHelper_ForceRefresh and addon:IsModuleEnabled("MythicPlusHelper") then addon:MythicPlusHelper_ForceRefresh() end
+    if addon.MPlus_UpdateMonitoringIndicator and addon:IsModuleEnabled("MythicPlusHelper") then addon.MPlus_UpdateMonitoringIndicator() end
+    if _G.RareTracker_UpdateIndicator then _G.RareTracker_UpdateIndicator() end
+    local sellTrashEnabled = addon:IsModuleEnabled("SellTrash")
+    if sellTrashEnabled and addon.SellTrash_OnModuleEnabled then addon:SellTrash_OnModuleEnabled() end
+    if (not sellTrashEnabled) and addon.SellTrash_ClearIndicators then addon:SellTrash_ClearIndicators() end
 end
 
 function addon:BuildToolbar()

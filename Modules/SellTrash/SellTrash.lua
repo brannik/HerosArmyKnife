@@ -25,6 +25,9 @@ local modFrame = CreateFrame("Frame")
 modFrame:RegisterEvent("MERCHANT_SHOW")
 modFrame:RegisterEvent("MERCHANT_CLOSED")
 modFrame:RegisterEvent("BAG_UPDATE")
+modFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+modFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+modFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
 
 -- Helpers
 local function GetItemIDFromLink(link)
@@ -156,7 +159,9 @@ end
 
 local bagButtonCache = {}
 local debugLabels = {}
-local slotIndicators = {}
+local bagCacheDirty = true
+local lastCacheScan = 0
+local MIN_CACHE_RESCAN = 0.2
 
 local function SetButtonDebugLabel(button, bagID, slotID, enabled)
     if not button then return end
@@ -186,9 +191,23 @@ end
 local function RefreshBagButtonCache(debugEnabled)
     for bagID, slotMap in pairs(bagButtonCache) do
         for slotID, button in pairs(slotMap) do
-            if not debugEnabled then SetButtonDebugLabel(button, bagID, slotID, false) end
-            slotMap[slotID] = nil
+            if not debugEnabled then
+                SetButtonDebugLabel(button, bagID, slotID, false)
+            else
+                SetButtonDebugLabel(button, bagID, slotID, true)
+            end
         end
+    end
+
+    local now = GetTime and GetTime() or 0
+    if not bagCacheDirty and (now - lastCacheScan) < MIN_CACHE_RESCAN then
+        return
+    end
+    bagCacheDirty = false
+    lastCacheScan = now
+
+    for bagID in pairs(bagButtonCache) do
+        bagButtonCache[bagID] = nil
     end
 
     local frameCount = NUM_CONTAINER_FRAMES or 13
@@ -375,15 +394,58 @@ local merchantButton
 
 -- Create update frame for continuous icon updates
 local updateFrame = CreateFrame("Frame")
-local elapsedSinceRefresh = 0
-updateFrame:SetScript("OnUpdate", function(_, elapsed)
-    elapsedSinceRefresh = elapsedSinceRefresh + (elapsed or 0)
-    if elapsedSinceRefresh < 0.2 then return end
-    elapsedSinceRefresh = 0
-    if addon.IsModuleEnabled and addon:IsModuleEnabled("SellTrash") then
-        addon:UpdateBagSlotGlow()
+updateFrame:Hide()
+local pendingGlowRefresh = false
+local refreshAccumulator = 0
+local MIN_REFRESH_DELAY = 0.05
+
+local function QueueBagGlowRefresh()
+    if addon.IsModuleEnabled and not addon:IsModuleEnabled("SellTrash") then
+        pendingGlowRefresh = false
+        refreshAccumulator = 0
+        updateFrame:Hide()
+        if addon.SellTrash_ClearIndicators then addon:SellTrash_ClearIndicators() end
+        return
     end
+
+    pendingGlowRefresh = true
+    refreshAccumulator = 0
+    if not updateFrame:IsShown() then updateFrame:Show() end
+end
+
+updateFrame:SetScript("OnUpdate", function(_, elapsed)
+    if not pendingGlowRefresh then
+        updateFrame:Hide()
+        return
+    end
+
+    refreshAccumulator = refreshAccumulator + (elapsed or 0)
+    if refreshAccumulator < MIN_REFRESH_DELAY then return end
+
+    pendingGlowRefresh = false
+    updateFrame:Hide()
+
+    if addon.IsModuleEnabled and not addon:IsModuleEnabled("SellTrash") then
+        return
+    end
+
+    addon:UpdateBagSlotGlow()
 end)
+
+function addon:SellTrash_ClearIndicators()
+    for bagID, slotMap in pairs(bagButtonCache) do
+        for slotID, button in pairs(slotMap) do
+            if button and button.TrackedIcon then button.TrackedIcon:Hide() end
+            if button and button.ProtectedIcon then button.ProtectedIcon:Hide() end
+            SetButtonDebugLabel(button, bagID, slotID, false)
+        end
+    end
+end
+
+function addon:SellTrash_OnModuleEnabled()
+    bagCacheDirty = true
+    QueueBagGlowRefresh()
+end
 
 modFrame:SetScript("OnEvent", function(self, event)
     if not addon.IsModuleEnabled or not addon:IsModuleEnabled("SellTrash") then return end
@@ -418,11 +480,13 @@ modFrame:SetScript("OnEvent", function(self, event)
         merchantButton:Show()
         -- Always enabled: sells greys plus tracked list
         merchantButton:SetEnabled(true)
-        addon:UpdateBagSlotGlow()
+        QueueBagGlowRefresh()
     elseif event == "MERCHANT_CLOSED" then
         if merchantButton then merchantButton:Hide() end
-    elseif event == "BAG_UPDATE" then
-        addon:UpdateBagSlotGlow()
+        QueueBagGlowRefresh()
+    elseif event == "BAG_UPDATE" or event == "BAG_UPDATE_DELAYED" or event == "PLAYER_ENTERING_WORLD" or event == "PLAYERBANKSLOTS_CHANGED" then
+        bagCacheDirty = true
+        QueueBagGlowRefresh()
     end
 end)
 
@@ -457,6 +521,8 @@ if addon.RegisterModuleOptions then
         dcb:SetChecked(GetSettings().debug)
         dcb:SetScript("OnClick", function(self)
             local s = GetSettings(); s.debug = self:GetChecked() and true or false
+            bagCacheDirty = true
+            QueueBagGlowRefresh()
         end)
     end)
 end
