@@ -155,21 +155,24 @@ local function ToggleProtectedUI()
 end
 
 local bagButtonCache = {}
+local debugLabels = {}
+local slotIndicators = {}
 
 local function SetButtonDebugLabel(button, bagID, slotID, enabled)
     if not button then return end
+    local label = debugLabels[button]
     if enabled then
-        if not button.DebugText then
-            local debugText = button:CreateFontString(nil, "OVERLAY")
-            debugText:SetFont("Fonts\\FRIZQT__.TTF", 10)
-            debugText:SetTextColor(1, 1, 0)
-            debugText:SetPoint("CENTER", button, "CENTER")
-            button.DebugText = debugText
+        if not label then
+            label = button:CreateFontString(nil, "OVERLAY")
+            label:SetFont("Fonts\\FRIZQT__.TTF", 10)
+            label:SetTextColor(1, 1, 0)
+            label:SetPoint("CENTER", button, "CENTER")
+            debugLabels[button] = label
         end
-        button.DebugText:SetText(bagID .. ":" .. slotID)
-        button.DebugText:Show()
-    elseif button.DebugText then
-        button.DebugText:Hide()
+        label:SetText(bagID .. ":" .. slotID)
+        label:Show()
+    elseif label then
+        label:Hide()
     end
 end
 

@@ -102,14 +102,19 @@ end
 
 local function OnClick(btn)
     local s = GetSettings()
-    -- If user opted into macro mode and the secure overlay exists, let it handle the click.
+    -- If user opted into macro mode, rely on secure overlay to fire the macro.
     if s.useMacro then
-        local overlay = _G["HAK_TransmogSecureButton"]
-        if overlay and overlay:IsShown() then return end
         if InCombatLockdown and InCombatLockdown() then
             if addon.Notify then addon:Notify("Cannot run macro during combat.", 'warn') elseif addon.Print then addon.Print("Cannot run macro during combat.") end
             return
         end
+        local overlay = _G["HAK_TransmogSecureButton"]
+        if overlay and overlay:IsShown() then
+            if addon.Transmog_UpdateSecureButton then addon.Transmog_UpdateSecureButton() end
+            -- Secure button consumes the click; nothing else to do.
+            return
+        end
+        -- Fallback if secure button missing: execute macro directly.
         ExecuteMacro()
         return
     end
@@ -150,12 +155,18 @@ local function Transmog_EnsureSecureButton()
     if btn._hakSecureAttached then return end
     local sb = CreateFrame("Button", "HAK_TransmogSecureButton", btn, "SecureActionButtonTemplate")
     sb:SetAllPoints(btn)
-    sb:RegisterForClicks("LeftButtonUp")
+    sb:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonDown", "RightButtonUp")
     local macroText = NormalizeNewlines(s.macro or DEFAULT_TRANSMOG_MACRO)
     sb:SetAttribute("type", "macro")
     sb:SetAttribute("type1", "macro")
+    sb:SetAttribute("type2", "macro")
     sb:SetAttribute("macrotext", macroText)
     sb:SetAttribute("macrotext1", macroText)
+    sb:SetAttribute("macrotext2", macroText)
+    sb:SetScript("PostClick", function()
+        if addon.Print then addon.Print("|cff00ff00Collected uncollected appearances!|r") end
+        if addon.Notify then addon:Notify("Collected uncollected appearances!", 'success') end
+    end)
     -- Tooltip passthrough
     sb:SetScript("OnEnter", function()
         if btn:GetScript("OnEnter") then btn:GetScript("OnEnter")(btn) end
@@ -171,8 +182,13 @@ local function Transmog_EnsureSecureButton()
             if not cur then Transmog_EnsureSecureButton(); cur = _G["HAK_TransmogSecureButton"] end
             if cur then
                 local mt = NormalizeNewlines(s2.macro or DEFAULT_TRANSMOG_MACRO)
+                cur:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonDown", "RightButtonUp")
+                cur:SetAttribute("type", "macro")
+                cur:SetAttribute("type1", "macro")
+                cur:SetAttribute("type2", "macro")
                 cur:SetAttribute("macrotext", mt)
                 cur:SetAttribute("macrotext1", mt)
+                cur:SetAttribute("macrotext2", mt)
                 cur:Show(); cur:EnableMouse(true)
             end
         else
