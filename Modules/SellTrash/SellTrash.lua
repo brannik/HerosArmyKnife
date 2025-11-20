@@ -45,6 +45,12 @@ local function IsTracked(itemID)
     return false
 end
 
+local function PlayerInCombat()
+    if InCombatLockdown and InCombatLockdown() then return true end
+    if UnitAffectingCombat then return UnitAffectingCombat("player") end
+    return false
+end
+
 -- Count total items in bags for a given itemID
 local function CountItemInBags(itemID)
     if not itemID then return 0 end
@@ -296,6 +302,14 @@ local function UpdateSlot(bag, slot, itemButton, trackedMap, protectedMap)
 end
 
 function addon:UpdateBagSlotGlow()
+    if PlayerInCombat() then
+        pendingGlowRefresh = true
+        refreshAccumulator = 0
+        needGlowRefreshAfterCombat = true
+        updateFrame:Hide()
+        return
+    end
+
     local settings = GetSettings()
     RefreshBagButtonCache(settings.debug)
 
@@ -399,6 +413,7 @@ updateFrame:Hide()
 local pendingGlowRefresh = false
 local refreshAccumulator = 0
 local MIN_REFRESH_DELAY = 0.05
+local needGlowRefreshAfterCombat = false
 
 local function QueueBagGlowRefresh()
     if addon.IsModuleEnabled and not addon:IsModuleEnabled("SellTrash") then
@@ -406,10 +421,20 @@ local function QueueBagGlowRefresh()
         refreshAccumulator = 0
         updateFrame:Hide()
         if addon.SellTrash_ClearIndicators then addon:SellTrash_ClearIndicators() end
+        needGlowRefreshAfterCombat = false
+        return
+    end
+
+    if PlayerInCombat() then
+        pendingGlowRefresh = true
+        refreshAccumulator = 0
+        needGlowRefreshAfterCombat = true
+        updateFrame:Hide()
         return
     end
 
     pendingGlowRefresh = true
+    needGlowRefreshAfterCombat = false
     refreshAccumulator = 0
     if not updateFrame:IsShown() then updateFrame:Show() end
 end
@@ -431,6 +456,15 @@ updateFrame:SetScript("OnUpdate", function(_, elapsed)
     end
 
     addon:UpdateBagSlotGlow()
+end)
+
+local combatWatcher = CreateFrame("Frame")
+combatWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+combatWatcher:SetScript("OnEvent", function()
+    if pendingGlowRefresh and needGlowRefreshAfterCombat then
+        needGlowRefreshAfterCombat = false
+        QueueBagGlowRefresh()
+    end
 end)
 
 function addon:SellTrash_ClearIndicators()

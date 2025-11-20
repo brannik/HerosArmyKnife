@@ -231,8 +231,32 @@ protBagWatcher:RegisterEvent("BAG_UPDATE")
 protBagWatcher:RegisterEvent("BAG_UPDATE_DELAYED")
 protBagWatcher:RegisterEvent("BAG_OPEN")
 protBagWatcher:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
-protBagWatcher:SetScript("OnEvent", function()
-    if protFrame and protFrame:IsShown() then
-        RefreshProtectedList()
+protBagWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+local pendingProtectedRefresh = false
+
+local function PlayerInCombat()
+    if InCombatLockdown and InCombatLockdown() then return true end
+    if UnitAffectingCombat then return UnitAffectingCombat("player") end
+    return false
+end
+
+protBagWatcher:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if pendingProtectedRefresh and protFrame and protFrame:IsShown() then
+            pendingProtectedRefresh = false
+            RefreshProtectedList()
+        end
+        return
     end
+
+    if not protFrame or not protFrame:IsShown() then
+        return
+    end
+
+    if PlayerInCombat() then
+        pendingProtectedRefresh = true
+        return
+    end
+
+    RefreshProtectedList()
 end)

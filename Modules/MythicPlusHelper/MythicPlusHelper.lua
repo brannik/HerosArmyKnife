@@ -948,8 +948,35 @@ end
 -- Periodic scan (bag updates)
 local scanFrame = CreateFrame("Frame")
 scanFrame:RegisterEvent("BAG_UPDATE")
-scanFrame:SetScript("OnEvent", function()
-    ScanForKeystone(); UpdateIconAppearance()
+scanFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+local pendingKeystoneScan = false
+
+local function PlayerInCombat()
+    if InCombatLockdown and InCombatLockdown() then return true end
+    if UnitAffectingCombat then return UnitAffectingCombat("player") end
+    return false
+end
+
+local function RunKeystoneScan()
+    pendingKeystoneScan = false
+    ScanForKeystone()
+    UpdateIconAppearance()
+end
+
+scanFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if pendingKeystoneScan then
+            RunKeystoneScan()
+        end
+        return
+    end
+
+    if PlayerInCombat() then
+        pendingKeystoneScan = true
+        return
+    end
+
+    RunKeystoneScan()
 end)
 
 -- Refresh on PLAYER_LOGIN and when item info becomes available

@@ -124,15 +124,16 @@ local function EnsureAboutWindow()
         addText({"HerosArmyKnife is a modular utility toolbar providing quick access","to gameplay helpers and QoL features."}, "CENTER")
         addHeader("Modules", {1,0.82,0})
         local moduleLines = {
-            "|cff4D94FFMythicPlusHelper|r - Keystone icon, LFG monitoring, recruitment builder, role marking, status indicators.",
-            "|cff00C8FFCacheOpener|r - Batch open cache / chest style containers.",
-            "|cffFF6A00SellTrash|r - Auto / manual vendor poor-quality items.",
-            "|cff33FF99Transmog|r - Macro runner for collecting unowned appearances.",
-            "|cffFFAA00RareTracker|r - Rare / rare-elite detection & optional auto marking.",
-            "|cffC8C800Settings|r - Central configuration hub.",
-            "|cffAAAAFFAbout|r - This information window.",
+            "|cff4D94FFMythicPlusHelper|r - Keystone tracking with combat-aware scans; right-click icon for monitoring toggle, party info, recruitment UI, and LFG monitor.",
+            "|cff00C8FFCacheOpener|r - Tracks watched cache items, enforces reserved bag slots, and opens stacks with a configurable delay.",
+            "|cffFF6A00SellTrash|r - Auto-sell poor quality items plus user-tracked goods; toolbar left-click opens tracked list, right-click opens protected list.",
+            "|cff33FF99Transmog|r - Safe in-addon collector that scans bags for unowned appearances; optional custom macro execution.",
+            "|cffFFAA00RareTracker|r - Detects rare/rare-elite targets, optional raid marker, alert popup, and sound notification.",
+            "|cffC8C800Settings|r - Global theme, toolbar layout, notification routing, and module toggles.",
+            "|cffE6CC80Reload|r - One-click /reload shortcut for faster UI iteration.",
+            "|cffAAAAFFAbout|r - Module reference, credits, and Discord invite.",
         }
-        if hasDebug then table.insert(moduleLines, "|cffFF8800DebugTools|r - Dev test harness (not in release).") end
+        if hasDebug then table.insert(moduleLines, "|cffFF8800DebugTools|r - Development sandbox: inject sample data, trigger module tests, toggle live monitors.") end
         addText(moduleLines)
         addHeader("Credits", {1,0.5,0.85})
         local creditsPara = addText({"Author: |cff33FF99"..author.."|r","Discord: |cff7289DAhttps://discord.gg/PzzmbxQyRy|r","Thank you for using HerosArmyKnife!"}, "CENTER")

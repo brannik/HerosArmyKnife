@@ -15,7 +15,6 @@ local function GetSettings()
 end
 
 local function BuildRecruitmentMessage(needs)
-    local icon = addon.GetCurrentKeystoneIcon and addon:GetCurrentKeystoneIcon() or nil
     local keyLink = addon.GetCurrentKeystoneLink and addon:GetCurrentKeystoneLink() or "(no key)"
     local needTank = tonumber(needs.tank) or 0
     local needHealer = tonumber(needs.healer) or 0
@@ -29,9 +28,6 @@ local function BuildRecruitmentMessage(needs)
         needSegment = " need "..table.concat(roleParts, " ")
     end
     local base = "LFM "..keyLink..needSegment
-    if icon then
-        base = "|T"..icon..":16:16:0:0|t "..base
-    end
     -- Allow whitespace-only custom messages (user may want spacing)
     local suffix = (R.customMessage and #R.customMessage > 0) and (" "..R.customMessage) or ""
     return base .. suffix

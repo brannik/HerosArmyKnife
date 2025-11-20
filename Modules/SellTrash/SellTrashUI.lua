@@ -302,8 +302,32 @@ bagWatcher:RegisterEvent("BAG_UPDATE")
 bagWatcher:RegisterEvent("BAG_UPDATE_DELAYED")
 bagWatcher:RegisterEvent("BAG_OPEN")
 bagWatcher:RegisterEvent("PLAYERBANKSLOTS_CHANGED")
-bagWatcher:SetScript("OnEvent", function()
-    if uiFrame and uiFrame:IsShown() then
-        RefreshTrackedList()
+bagWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+local pendingTrackedRefresh = false
+
+local function PlayerInCombat()
+    if InCombatLockdown and InCombatLockdown() then return true end
+    if UnitAffectingCombat then return UnitAffectingCombat("player") end
+    return false
+end
+
+bagWatcher:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if pendingTrackedRefresh and uiFrame and uiFrame:IsShown() then
+            pendingTrackedRefresh = false
+            RefreshTrackedList()
+        end
+        return
     end
+
+    if not uiFrame or not uiFrame:IsShown() then
+        return
+    end
+
+    if PlayerInCombat() then
+        pendingTrackedRefresh = true
+        return
+    end
+
+    RefreshTrackedList()
 end)
